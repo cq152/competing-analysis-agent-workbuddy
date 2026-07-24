@@ -1,6 +1,9 @@
-"""飞书集成占位：webhook URL 验证 + 卡片发送 stub。
+"""[已废弃] 飞书集成占位 —— 被 `app/bot.py` + `webhook_server.py` 取代。
 
-待接入 lark-cli / 飞书 Open API 后实现真实收发与卡片渲染。
+本文件的 verify_url / send_card stub 仅被 `app/main.py` 的 `/webhook/feishu`
+（已废弃）调用。实际飞书集成逻辑已迁移到：
+  - app/bot.py：LarkBot 类（API 客户端、消息收发、场景路由）
+  - webhook_server.py：/webhook/event（url_verification + 事件接收全链路）
 """
 from typing import Any
 

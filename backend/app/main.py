@@ -1,4 +1,16 @@
-"""FastAPI 入口：健康检查、飞书 webhook、分析接口。"""
+"""[已废弃] FastAPI 预研骨架 —— 被 `webhook_server.py` 取代。
+
+本文件是 2026-07-24 之前的预研阶段产物，用于验证 FastAPI + engine 可行性。
+当前所有功能已迁移到项目根目录的 `webhook_server.py`（统一 FastAPI 入口）：
+
+  - GET  /health       → webhook_server.py (新增，含 scenes 列表)
+  - POST /api/analyze  → webhook_server.py (新增，复用 engine)
+  - POST /webhook/feishu → 已删除（占位路由，无实际消息处理能力；由 /webhook/event 取代）
+
+保留本文件仅为历史参考，所有新开发请走 `webhook_server.py`。
+相关废弃文件：app/feishu.py（stub）、app/sessions.py（仅本文件引用）。
+"""
+# 以下代码已不再使用，保留仅供历史参考。
 from fastapi import FastAPI, Request
 from pydantic import BaseModel
 
@@ -28,10 +40,9 @@ def api_analyze(req: AnalyzeReq):
 
 @app.post("/webhook/feishu")
 async def feishu_webhook(req: Request):
+    """[已废弃] 无实际消息处理能力，仅做 URL 验证。请使用 webhook_server.py 的 /webhook/event。"""
     body = await req.json()
-    # 飞书事件订阅 URL 验证
     if body.get("type") == "url_verification":
         from .feishu import verify_url
         return verify_url(body.get("challenge", ""))
-    # TODO: 解析 im.message.receive_v1 → 意图识别 → 调 engine → 卡片回复
-    return {"ok": True}
+    return {"ok": True, "warning": "此路由已废弃，请使用 webhook_server.py 的 /webhook/event"}
