@@ -1,12 +1,22 @@
 """分析引擎：加载 validation/prompts/*.txt（唯一真相）并调用 LLM。
 
-提示词源文件只存在于 validation/，后端不重复存放，避免与 Aily 漂移。
+v3 轻改造（09 附录C Task 2.7）：在保留 W1 已验证的「prompt 加载 + LLM 调用」前提下，
+追加「通用搜索 → 抓取 → 上下文组装 → 注入」并封装为结构化 AnalysisResult。
+
+设计约束（保护 W1 已验证核心）：
+- 仍只读 validation/prompts/*.txt，不重复存放（避免与 Aily 漂移）；
+- 不注入 v2.1 的 G6/G1 硬性指令（v3 已降级为目标，避免改变红线立场）；
+- 搜索/抓取失败优雅降级为纯 LLM + 标注「待核实」，不整体失败。
 """
+from __future__ import annotations
+
+import asyncio
 from pathlib import Path
 
 from openai import OpenAI
 
 from .config import settings
+from .models import AnalysisResult, Source
 
 # validation/prompts 相对本文件的路径：backend/app/engine.py -> ../../../validation/prompts
 PROMPTS_DIR = Path(__file__).resolve().parent.parent.parent / "validation" / "prompts"
@@ -27,21 +37,105 @@ def _read(name: str) -> str:
     return (PROMPTS_DIR / name).read_text(encoding="utf-8")
 
 
-def analyze(scene: str, query: str) -> str:
-    """按场景加载提示词并调用 LLM，返回分析结果文本。"""
+def _gather_context(scene: str, query: str) -> tuple[list[Source], str]:
+    """通用搜索 + 抓取，返回 (来源列表, 上下文文本)。
+
+    失败时返回空列表 + 降级备注（以 ⚠️ 开头）。不向外抛异常。
+    """
+    from . import fetcher
+    from .searcher import Searcher  # search 是 Searcher 实例方法，需先实例化
+
+    sources: list[Source] = []
+    try:
+        results = Searcher().search(query, max_results=settings.search_max_results)
+    except Exception:  # noqa: BLE001
+        return sources, "⚠️ 未能获取实时数据，以下基于模型知识（待核实）"
+
+    if not results:
+        return sources, "⚠️ 实时搜索无结果，以下基于模型知识（待核实）"
+
+    # 抓取 Top N URL 正文（fetcher.fetch 为异步，引擎在同步上下文用 asyncio.run 驱动）
+    urls = [r.url for r in results if r.url][: settings.fetch_max_urls]
+    pages: list = []
+    if urls:
+        try:
+            pages = asyncio.run(fetcher.fetch(urls))
+        except Exception:  # noqa: BLE001
+            pages = []
+
+    lines: list[str] = []
+    for i, r in enumerate(results, 1):
+        sources.append(
+            Source(
+                url=r.url,
+                title=r.title,
+                snippet=r.snippet,
+                source_type="general_web",
+                source_display="网页搜索",
+                relevance="high" if i <= 2 else "medium",
+            )
+        )
+        lines.append(f"### {i}. [{r.title}]({r.url})\n> {(r.snippet or '')[:300]}")
+
+    for p in pages:
+        if p and getattr(p, "text", ""):
+            lines.append(f"\n正文节选（{p.title}）：\n{p.text[:800]}")
+
+    context = f"## 参考资料来源（{len(sources)} 条）\n" + "\n".join(lines)
+    return sources, context
+
+
+def analyze(scene: str, query: str, target: str | None = None) -> AnalysisResult:
+    """按场景加载提示词、注入实时搜索上下文并调用 LLM，返回结构化 AnalysisResult。
+
+    Args:
+        scene: 场景键（battle_card / pricing / weekly / discovery）
+        query: 用户查询
+        target: 目标竞品（v3 预留，当前通用搜索未强制使用）
+    """
     if scene not in SCENES:
         raise ValueError(f"unknown scene: {scene}，可选: {list_scenes()}")
 
+    # —— 以下 prompt 加载与 LLM 调用保持 W1 已验证逻辑不变 ——
     system_prompt = _read("system.txt")
     scene_prompt = _read(SCENES[scene])
 
+    sources, context = _gather_context(scene, query)
+
+    note = ""
+    if context.startswith("⚠️"):
+        note = context
+        user_content = query
+    else:
+        user_content = (
+            f"{query}\n\n{context}\n\n"
+            "（请基于以上参考资料分析，并标注信息来源；"
+            "无法验证的信息明确标注「待核实」。）"
+        )
+
     client = OpenAI(api_key=settings.api_key, base_url=settings.base_url)
-    resp = client.chat.completions.create(
-        model=settings.model,
-        temperature=0.4,
-        messages=[
-            {"role": "system", "content": system_prompt + "\n\n# 当前场景指令\n" + scene_prompt},
-            {"role": "user", "content": query},
-        ],
+    messages = [
+        {"role": "system", "content": system_prompt + "\n\n# 当前场景指令\n" + scene_prompt},
+        {"role": "user", "content": user_content},
+    ]
+    analysis = ""
+    for _ in range(2):  # 偶发空 completion 时重试一次（模型冷启动等）
+        resp = client.chat.completions.create(
+            model=settings.model,
+            temperature=0.4,
+            messages=messages,
+        )
+        analysis = resp.choices[0].message.content or ""
+        if analysis.strip():
+            break
+
+    coverage = {"general_web": len(sources), "total": len(sources)}
+    return AnalysisResult(
+        scene=scene,
+        query=query,
+        analysis=analysis,
+        sources=sources,
+        confidence="medium",
+        coverage_summary=coverage,
+        note=note,
     )
-    return resp.choices[0].message.content

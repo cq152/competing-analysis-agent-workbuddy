@@ -24,7 +24,8 @@
 提示词唯一真相：validation/prompts/*.txt（不重复存放，守 §10 纪律）。
 
 历史说明：
-    app/main.py 是本文件创建前的预研骨架（含占位的 /webhook/feishu），已废弃；
+    app/main.py（预研骨架，含占位的 /webhook/feishu）、app/feishu.py（stub）、
+    app/sessions.py（会话状态）已于 W2 v3 清理删除；功能均已迁移到本文件 + app/bot.py。
     run_bot.py 是 WebSocket 长连接入口，因僵尸连接问题降级为备选。
 """
 import asyncio
@@ -188,9 +189,14 @@ def health():
 
 @app.post("/api/analyze")
 def api_analyze(req: AnalyzeReq):
-    """外部系统可调用的分析 API，复用验证通过的提示词引擎。"""
-    result = engine_analyze(req.scene, req.query)
-    return {"scene": req.scene, "result": result}
+    """外部系统可调用的分析 API，复用验证通过的提示词引擎。
+
+    v3：引擎返回结构化 AnalysisResult，直接序列化返回（analysis/sources/coverage 等）。
+    """
+    res = engine_analyze(req.scene, req.query)
+    if hasattr(res, "model_dump"):
+        return {"scene": req.scene, **res.model_dump()}
+    return {"scene": req.scene, "result": res}
 
 
 if __name__ == "__main__":

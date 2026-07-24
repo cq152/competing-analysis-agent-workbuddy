@@ -135,10 +135,12 @@ class LarkBot:
 
     def _async_analyze(self, msg, scene: str, query: str) -> None:
         try:
-            result = analyze(scene, query)
+            res = analyze(scene, query)
+            # v3 引擎返回 AnalysisResult，取分析文本；兼容旧版纯文本返回
+            text = res.analysis if hasattr(res, "analysis") else str(res)
         except Exception as e:  # noqa: BLE001
-            result = f"分析失败：{e}"
-        self._reply(msg, result)
+            text = f"分析失败：{e}"
+        self._reply(msg, text)
 
     def _reply(self, msg, text: str) -> None:
         # 飞书 `im.v1.message.create` 实测：receive_id_type="message_id"（引用回复）报

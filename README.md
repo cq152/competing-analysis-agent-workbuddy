@@ -136,8 +136,11 @@
 - [x] **2.4 监控雷达 monitor.py（v3 核心）**：SQLite 存储 + `MonitorService`（check_one/run_all 定时搜索→变化检测→推群）+ 单例
 - [x] **2.5 变化检测 detector.py（v3 核心）**：`detect_changes` 集合 diff（最小版，类型识别留 W4）
 - [x] **2.9 Bot 监控命令**：`bot.py` 加 `push()` + `/monitor add|list|remove`；`webhook_server.py` 加 lifespan 启动后台轮询（`MONITOR_ENABLED` / `MONITOR_INTERVAL_MINUTES` 配置）
-- [ ] **待续（v3 剩余，用户暂停 review）**：2.6 models.py（AnalysisResult 结构化）/ 2.7 engine 轻改造（搜索→组装→LLM→结构化+优雅降级，**改动 W1 已验证核心**）/ 2.8 chinese_sources.py 占位 / 2.9 清理废弃文件（main.py/feishu.py/sessions.py）
-- [ ] 用户 review 本次 W2 v3 核心代码（searcher/fetcher/detector/monitor/bot/webhook_server）后再决定是否推进 2.6-2.9
+- [x] **2.6 数据模型 models.py**：自包含 Pydantic（`Source`/`AnalysisResult`/`CompareResult`），不依赖 chinese_sources（解耦）
+- [x] **2.7 引擎轻改造 engine.py（W1 核心防护）**：保留 W1 的 prompt 加载 + LLM 调用不变，追加通用搜索→抓取→上下文组装→注入，返回结构化 `AnalysisResult`；优雅降级（搜索/抓取失败回退纯 LLM + 标注「待核实」）；**不注入** G6/G1 硬性指令（v3 已降级）；同步改 `bot.py`（取 `res.analysis`）与 `webhook_server.py`（返回 `model_dump`）。已端到端冒烟：真实搜索（DDG 3 条）+ DeepSeek 返回 1778 字带引用分析；pricing 场景红线完好（模型主动标注「待核实」）
+- [x] **2.8 中文数据源占位 chinese_sources.py**：`SourceType` 枚举 + `DataPoint` + `ChineseSourceManager.search()` 默认返回 `[]`（enable=False），启用抛 `NotImplementedError` 指向 W4 实接
+- [x] **2.9 清理废弃文件**：`git rm` 删除 `app/main.py`/`app/feishu.py`/`app/sessions.py`（无活跃 import），修正 `webhook_server.py` 顶部过时注释
+- [x] **W2 v3 全部 9 个 Task 完成（2026-07-25）**：2.1–2.9 落地，含监控雷达（唯一硬差异化）+ 结构化分析引擎 + 优雅降级；下一步进入 W3（按 `09` 滚动计划细化）或先跑真实用户验证
 > 审计与决策过程见 `15`；v3 任务清单以 `09` 附录C 为准。
 
 ---
