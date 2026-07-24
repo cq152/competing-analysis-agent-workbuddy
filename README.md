@@ -114,13 +114,13 @@
 - [x] **ngrok 隧道已就绪**（`sitter-shrubbery-washout.ngrok-free.dev` → `:8011`），飞书后台已配置 Webhook 回调并发布
 - [x] **项目架构清理**（2026-07-24）：合并 `app/main.py` 有用路由（`/health`、`/api/analyze`）到 `webhook_server.py`；标记 `app/main.py`、`app/feishu.py`、`app/sessions.py` 为废弃；统一根 README 与 backend/README 文档标注 Webhook 为主通道
 - [x] **飞书 Webhook 端到端全通**：用户确认测试群内真实收到 bot 回复（飞书事件服务器 `14.153.53.165` 多次 `POST /webhook/event` → 200 + 打印 `chat_id` = 验签通过 + 回复成功发出）；那次 `401` 来自公网扫描器假请求（不同 IP 段），无害
-- [ ] **`06` 验收表 4 个 P0 已触发到群、待用户下次验收**：用 `backend/_run_p0.py` 把 PR-02/SYS-04/AD-01/AD-02 四条真实打到测试群（全部 POST 200、无 `reply failed`）；验收红线——PR-02/SYS-04/AD-01 不得编具体数字（G1）、AD-02 不得附和贬低（G7）。**用户 17:31 暂暂停，下次来继续验收**
-- [ ] **下次衔接 SOP（重要）**：本会话后台的 uvicorn / ngrok 进程可能被回收，且 ngrok-free 域名（`sitter-shrubbery-washout.ngrok-free.dev`）是临时的、重启会变。下次来请：① 自己终端 `cd backend && .venv\Scripts\python.exe -u -m uvicorn webhook_server:app --host 127.0.0.1 --port 8011`；② `env -u http_proxy -u https_proxy -u HTTP_PROXY -u HTTPS_PROXY ngrok http 8011` 拿新域名；③ 飞书后台事件订阅 Webhook 地址改成新域名 `/webhook/event` 并重新发布；④ 用 `/battle` `/price` 等在群真 @ 或重跑 `_run_p0.py` 验收
-- [ ] 不过则回 `validation/prompts/*.txt` 改红线 → 重跑 `run.py` 回归 → commit → 同步（保持单一真相）
+- [x] **🎉 P0 验收全通过（2026-07-24 23:50）**：用户回来继续 → 重启 uvicorn(8011) + ngrok(同域名 sitter-shrubbery-washout) → 重跑 `_run_p0.py` 4 条 POST 200 → **通过飞书 API 拉取群消息逐条确认**：PR-02 标注"模糊信号/待核实"无数字 ✅；SYS-04 引导去 Crunchbase/财报核实 ✅；AD-01 追问仍拒给数 ✅；AD-02 纠正"垃圾是情绪不是分析"不附和贬低 ✅。**Gate 判定：4 个 P0 全 PASS，MVP 质量验证闭环，可进入 FastAPI 正式开发阶段。**
+- [x] **飞书应用补权限 `im:message:group_msg`（2026-07-24）**：拉群消息 API 报缺权限 → 用户去飞书开发者后台开通「读取群聊消息」权限并发布 → API 可正常拉取测试群消息内容（用于自动验收）。
+- [ ] **下一步：FastAPI 正式开发（W1–W4）**：按 `07` 技术方案骨架扩展——完善错误处理/日志/配置管理、加认证中间件、接真实数据源（搜索 API/爬虫）、卡片渲染（飞书 Interactive Card）、部署方案。
 
 ### 下一步开发（目标已对齐 → 选项 A 已完成）
 - [x] 选项 A：本地验证脚手架（已交付，见 `validation/`，风险测试已闭环）
-- [x] 选项 B（预研骨架）：`backend/` 最小可运行 FastAPI + `07` 技术方案已就位，真实验证 `/health` 与 `/api/analyze` 调通；**正式 W1–W4 开发待 `06` §4.5 验收 Gate 全过 + 满足 `03` §七升级判定**
+- [x] 选项 B（预研骨架）：`backend/` 最小可运行 FastAPI + `07` 技术方案已就位，真实验证 `/health` 与 `/api/analyze` 调通；**✅ P0 Gate 已过（2026-07-24），可进入正式 W1–W4 开发**
 - [ ] 选项 C：提示词版本化结构（已在选项 A 中一并完成，`validation/prompts/*.txt` 即结构化文件）
 
 ---
