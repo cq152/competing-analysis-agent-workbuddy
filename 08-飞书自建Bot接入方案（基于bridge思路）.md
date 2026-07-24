@@ -79,7 +79,7 @@ python run_bot.py
 
 - **替代** Aily 平台的「手动创建自定义智能体」（`aily/` 留作参考，不再主推）。
 - **复用** `validation/prompts/*.txt`（提示词唯一真相）、`backend/app/engine.py`（分析引擎）。
-- 原 FastAPI 路线（`backend/app/main.py` + `/webhook/feishu`）保留作后续「企业级 Webhook / 多租户」扩展；长连接 Bot 是当前 MVP 验证主通道。
+- 原 FastAPI 路线（`backend/app/main.py` + `/webhook/feishu`）保留作后续「企业级 Webhook / 多租户」扩展；**Webhook Bot（`backend/webhook_server.py`）是当前 MVP 验证主通道**，长连接（`run_bot.py`）因「单连接僵尸路由」问题降级为备选（详见附录 C）。
 
 ## 8. 已知限制 / 下一步
 
@@ -118,3 +118,88 @@ python run_bot.py
    - `reply_if_unauthorized: false`（默认）：非白名单群**静默不回**，机器人存在感为零；
    - 设为 `true`：非白名单群回一句"本群未在白名单内"提示。
 4. 重启 `run_bot.py` 生效。之后机器人只响应白名单群 + 私聊。
+
+---
+
+## 附录 C · HTTP Webhook 回调 + 内网穿透（替代长连接，当前主通道）
+
+### C.1 为什么有这个附录
+长连接（`lark.ws.Client`）模式下，飞书**同一应用只允许一个活跃连接**；开发期反复「杀→起」会留下僵尸连接，事件被路由到已死的实例，表现为「群里 @机器人 没反应」。本地验证还发现 `_reply` 用 `receive_id_type="message_id"`（引用回复）飞书报 `99992402 field validation failed`。
+→ 改用 **HTTP Webhook 回调**：飞书主动 POST 到你的公网 URL，没有长连接，单连接限制彻底消失；回复改用 `receive_id_type="chat_id"` 发到群（已验证成功）。
+
+### C.2 架构
+```
+飞书群/私聊 @机器人
+      │  im.message.receive_v1（POST 到回调地址）
+      ▼
+内网穿透（cloudflared/ngrok）→ http://localhost:8011/webhook/event
+      │
+backend/webhook_server.py  ── FastAPI（复用 bot.py 的 LarkBot.handle_message）
+      │  验签 + url_verification 挑战 + 事件类型过滤
+      ▼
+app/bot.py  LarkBot → 解析 @mention、路由 /场景 → app/engine.py → 复用 validation/prompts/*.txt
+      │  回复用 receive_id_type="chat_id" 发到群
+      ▼
+群里收到回复
+```
+
+### C.3 飞书后台配置
+1. 事件订阅 → 接收方式从「长连接」改为「**Webhook 回调地址**」。
+2. 回调地址填：`https://<隧道域名>/webhook/event`（隧道见 C.4）。
+3. 首次保存时飞书会发 `url_verification` 事件，本服务自动原样返回 `challenge`，无需手动处理。
+4. 权限（附录 A）不变：启用机器人 + `im:message` / `im:message:send_as_bot` / `im:message.group_at_msg`。
+5. 重新发布版本使配置生效，机器人已进群。
+
+### C.4 内网穿透（二选一，开发期免公网服务器）
+- **Cloudflare Tunnel**（免费免账号）：
+  ```bash
+  cloudflared tunnel --url http://localhost:8011
+  # 输出 https://xxxx.trycloudflare.com 即公网地址
+  ```
+- **ngrok**：
+  ```bash
+  ngrok http 8011
+  # 输出 https://xxxx.ngrok.io
+  ```
+把 `https://<隧道域名>/webhook/event` 填到飞书后台（C.3 第 2 步）。
+
+### C.5 本地启动
+```bash
+cd backend
+.venv\Scripts\python.exe -m uvicorn webhook_server:app --host 0.0.0.0 --port 8011
+# 或 python webhook_server.py（默认 8000，可用 WEBHOOK_PORT 改端口）
+```
+服务起来后访问 `http://localhost:8011/healthz` 应返回 `{"ok":true}`。
+
+### C.6 验签
+`webhook_server.py` 支持两种飞书签名头：
+- 新版 `X-Lark-Signature`：HMAC-SHA256(`app_secret`, `timestamp+nonce+body`) 再 base64
+- 旧版 `X-Feishu-Signature`：同上但 key 用 `verification_token`
+开发期若请求不带签名头会放行；生产建议关闭放行：设 `SKIP_SIGNATURE=0` 并配置 `FEISHU_VERIFICATION_TOKEN`（后台「事件订阅 → Verification Token」获取）。
+
+### C.7 本地自测 SOP（不用隧道也能验证全链路）
+1. 起 uvicorn（C.5）。
+2. 用飞书 API 或直接在群 @机器人 拿真实 `message_id` / `chat_id`。
+3. 用脚本/curl 模拟飞书 POST 事件到 `http://localhost:8011/webhook/event`：
+   ```json
+   {
+     "schema": "2.0",
+     "header": {"event_type": "im.message.receive_v1", "app_id": "cli_aae8..."},
+     "event": {
+       "message": {
+         "message_id": "<真实id>",
+         "chat_id": "oc_xxx",
+         "chat_type": "group",
+         "message_type": "text",
+         "content": "{\"text\":\"/help\"}",
+         "mentions": [{"key": "@_user_1", "id": "ou_bot"}]
+       }
+     }
+   }
+   ```
+4. 服务日志打印 `[lark] chat_id=...` 且群里收到回复即通过。
+
+### C.8 已验证状态（2026-07-24）
+- `/help` 与 `/battle` 两条事件均 200 OK、日志打印 chat_id 且无 `reply failed`；群里真实收到 HELP 回复 + 「分析中」+ battle_card 应对卡。
+- 结论：**接收 → 解析 → 场景路由 → 调 DeepSeek 引擎 → 回复到群** 全链路通。
+- 入口文件：`backend/webhook_server.py`（替代 `run_bot.py`，后者保留但降级）。

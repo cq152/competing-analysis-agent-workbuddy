@@ -109,7 +109,7 @@
 - [x] 飞书开发者后台已建**企业自建应用**（App ID `cli_aae8...`，2026-07-24），凭证已入 `backend/.env`（gitignore 不入库）
 - [x] **长连接实测通但暴露根因**：实测 `connected to wss://msg-frontier.feishu.cn` 成功；但开发期反复「杀→起」触发飞书「同应用仅一个活跃连接」限制，旧连接僵尸导致事件路由到死连接（表现「@机器人没反应」）。已修代码 bug（`_reply` 缺 `request_body` 一层）+ 加单实例锁（`bot.py` 原子 `O_EXCL`，`.gitignore` 加 `.bot.lock`）
 - [x] **换方案 B（HTTP Webhook 替代长连接）**：已写 `backend/webhook_server.py`（FastAPI，复用 `bot.py` 的 `LarkBot.handle_message`，含飞书验签 + `url_verification` 挑战 + 事件过滤），彻底规避单连接限制
-- [ ] **本地验证 webhook 全链路**：起 `uvicorn webhook_server:app` + 模拟飞书 POST `im.message.receive_v1` 事件 → 确认群里真实收到回复（验证「接收→解析→回复 API 成功发出」）
+- [x] **本地验证 webhook 全链路通过**：起 `uvicorn webhook_server:app`（端口 8011）+ 模拟飞书 POST `im.message.receive_v1` 事件 → 群里真实收到 HELP 回复 + 「分析中」+ battle_card 应对卡（接收→解析→场景路由→调 DeepSeek 引擎→回复到群 全链路通）；`_reply` 改用 `receive_id_type=chat_id`（飞书 `message_id` 引用回复报 99992402）
 - [ ] `08` 补附录 C：HTTP 回调 + 内网穿透（cloudflared/ngrok）方案，含飞书后台事件订阅改 Webhook 接收方式
 - [ ] 用户侧：装隧道暴露公网 → 飞书后台事件订阅接收方式从「长连接」改「Webhook 回调地址」填隧道 URL → 群内 @机器人 跑 `06` 验收表（4 个 P0 必测）
 - [ ] 不过则回 `validation/prompts/*.txt` 改红线 → 重跑 `run.py` 回归 → commit → 同步（保持单一真相）

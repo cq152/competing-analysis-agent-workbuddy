@@ -138,13 +138,16 @@ class LarkBot:
         self._reply(msg, result)
 
     def _reply(self, msg, text: str) -> None:
+        # 飞书 `im.v1.message.create` 实测：receive_id_type="message_id"（引用回复）报
+        # 99992402 field validation failed；改用 receive_id_type="chat_id" 发到群最稳
+        # （群内以 bot 独立消息呈现，可见且不依赖消息 id 格式）。
         content = json.dumps({"text": text}, ensure_ascii=False)
         req = (
             CreateMessageRequest.builder()
-            .receive_id_type("message_id")
+            .receive_id_type("chat_id")
             .request_body(
                 CreateMessageRequestBody.builder()
-                .receive_id(msg.message_id)
+                .receive_id(msg.chat_id)
                 .msg_type("text")
                 .content(content)
                 .build()
