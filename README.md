@@ -80,10 +80,11 @@
 | `05-场景提示词与样例.md` | 4 个核心场景的粘贴即用提示词 + few-shot 样例 + 调参锦囊 | 路线 A |
 | `06-功能测试重点与项目红线.md` | 项目经验 + 全部红线汇总 + 已做风险测试（含两处真实 bug）+ 功能验收要点与用例 | 测试 |
 | `06-测试记录表.csv` | 可导入飞书多维表格的勾选式验收用例（26 项，含 4 个 P0 必测） | 测试 |
-| `aily/` | **飞书 Aily 导入包**：`人设.txt`(完整大脑) + 开场白 + 监控/定时配置，粘进去即用 | 路线 A 落地 |
+| `aily/` | **飞书 Aily 导入包（参考）**：`人设.txt`+开场白+监控配置，粘进去即用；**已被 `08` 代码创建方式替代，主推不再走 Aily UI** | 路线 A 参考 |
 | `validation/` | **本地验证脚手架**：抽离 `03`/`05` 提示词为可版本化 `prompts/*.txt`，CLI 支持 dry-run 与 LLM 调用、风险测试 | 路线 A 验证 |
 | `07-自建后端技术方案（预研骨架）.md` | 路线 B 预研：架构/接口契约/数据模型/与 02 关系/与 Aily 取舍/实施步骤（待 Gate） | 路线 B |
-| `backend/` | **FastAPI 预研骨架**：`/health`、`/api/analyze`(复用 `validation/prompts`)、`/webhook/feishu` 占位，已真实验证调通 | 路线 B |
+| `backend/` | **主通道**：`run_bot.py` 飞书 WebSocket 长连接 Bot（免公网，接分析引擎）+ FastAPI 预研骨架（`/health`、`/api/analyze` 复用 `validation/prompts`、`/webhook/feishu`） | 路线 B/MVP |
+| `08-飞书自建Bot接入方案（基于bridge思路）.md` | 借鉴 lark-coding-agent-bridge：用代码声明式创建飞书接入层（企业自建应用+WebSocket 长连接+config.json），**替代 Aily UI 手动创建** | 路线 A 替代 |
 | **既有资产（原始素材，未纳入主线）** | `竞品分析专员 · 能力全景介绍.md`、`竞品分析师智能体：能力说明与使用指南.md`、`竞品分析师智能体：设计逻辑、专业范围与能力全景.md`、`竞品分析师介绍 - 我能帮你做什么.md`、`行业_竞品深度研究专家 · 智能体介绍.md`、`竞品分析+舆情分级 智能体功能建议 deepseek.md` | 参考 |
 
 ---
@@ -101,16 +102,15 @@
 - [x] **确立项目提交规范**：每次 commit 前扫描对话 + 当前进度，同步更新本文件（规则见 §10），并写入 `.workbuddy/memory/MEMORY.md` 长期约定
 - [x] **FastAPI 预研骨架 `backend/` + `07` 技术方案**：最小可运行 FastAPI（`/health`、`/api/analyze` 真调 LLM 复用 `validation/prompts`、`/webhook/feishu` 占位），本地起服验证调通；**正式开发待 `06` §4.5 Gate 全过**
 - [x] **核对飞书 Aily 最新 UI（2026-07-24）**：修正 `03` / `aily/README.md` 创建步骤——补「前往开发后台」入口、人设改官方叫法「角色设定 / 自定义角色设定与提示词」、发布模式在新建第 2 步选（专业版入口默认无感），避免卡在聊天界面找不到配置
+- [x] **换道决策（2026-07-24）**：放弃卡在 UI 的「Aily 平台手动创建自定义智能体」（`aily/` 降为参考），改为借鉴 [lark-coding-agent-bridge](https://github.com/zarazhangrui/lark-coding-agent-bridge) 思路、用**代码声明式创建飞书接入层**（企业自建应用 + WebSocket 长连接免公网 + `bot_config.json`）。新增 `app/bot.py`/`run_bot.py`/`bot_config.json`/`08`，**完全复用** `validation/prompts/*.txt` 与 `backend/app/engine.py`，不重复任何业务逻辑
 
-### 进行中 / 待你执行（用户侧，飞书 Aily）
-- [x] **确认进入正确 Aily 平台页面**：用户 2026-07-24 截图显示顶部「智能体」Tab、右侧「+ 创建智能体」、左侧导航「新任务/自动化/智能体/项目/资源库/市场」，符合 Aily 平台自定义智能体入口特征（此前误入的「智能伙伴/小满」页已排除）
-- [ ] 点右上角 **「+ 创建智能体」** → 选 **「自定义智能体」** → 选 **「无感发布模式」**
-- [ ] 粘 `aily/人设.txt` 到「角色设定 / 自定义角色设定与提示词」（建议**新建**智能体，避免旧「cq的竞品分析师」配置干扰）
-- [ ] 开「联网」开关（能力/技能配置页）—— 竞品实时数据命根子，不开会显浅/瞎编
-- [ ] 粘 `aily/开场白与推荐问题.txt` 到「开场欢迎语」+「推荐问题」（按 `---` 拆两段）
-- [ ] （可选但推荐）知识空间上传 `01-市场研究报告.md` 等 5 个文件
-- [ ] 发布到测试群（无感发布→一键加群聊），开始跑 `06` 验收表
-- [ ] 拉测试群，跑 `03` 的 10 项验证清单 + `06` 的功能测试要点与对抗用例；不过则回 `validation/prompts/*.txt` 调参
+### 进行中 / 待你执行（飞书接入，代码方式）
+- [x] **创建方式已换道**：从「Aily 平台手动创建自定义智能体」改为「代码声明式飞书自建 Bot」（`08` + `backend/run_bot.py`）
+- [ ] 飞书开发者后台建**企业自建应用**，拿 App ID/Secret；开机器人权限 + 订阅事件 `im.message.receive_v1`（接收方式选「长连接」）
+- [ ] 填 `backend/.env` 的 `FEISHU_APP_ID`/`FEISHU_APP_SECRET` + `OPENAI_API_KEY`
+- [ ] 启动 `python backend/run_bot.py`，控制台出现 `connected to wss://` 即长连接成功
+- [ ] 群里 @机器人 用 `/battle` `/price` `/weekly` `/discover` 跑 `06` 验收表（重点 4 个 P0 必测）
+- [ ] 不过则回 `validation/prompts/*.txt` 改红线 → 重跑 `run.py` 回归 → commit → 同步（保持单一真相）
 
 ### 下一步开发（目标已对齐 → 选项 A 已完成）
 - [x] 选项 A：本地验证脚手架（已交付，见 `validation/`，风险测试已闭环）

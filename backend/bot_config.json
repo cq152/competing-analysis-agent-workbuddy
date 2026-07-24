@@ -1,0 +1,12 @@
+{
+  "bot_name": "竞品分析搭档",
+  "default_scene": "battle_card",
+  "require_mention_in_group": true,
+  "allowed_chats": [],
+  "scene_aliases": {
+    "/battle": "battle_card",
+    "/price": "pricing",
+    "/weekly": "weekly",
+    "/discover": "discovery"
+  }
+}
