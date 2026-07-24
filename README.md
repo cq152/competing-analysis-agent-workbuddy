@@ -107,11 +107,11 @@
 ### 进行中 / 待你执行（飞书接入，代码方式）
 - [x] **创建方式已换道**：从「Aily 平台手动创建自定义智能体」改为「代码声明式飞书自建 Bot」（`08` + `backend/run_bot.py`）
 - [x] 飞书开发者后台已建**企业自建应用**（App ID `cli_aae8...`，2026-07-24），凭证已入 `backend/.env`（gitignore 不入库）
-- [x] **长连接实测成功**：`python backend/run_bot.py` 已跑通，控制台出现 `connected to wss://msg-frontier.feishu.cn`，凭证有效
-- [x] 代码微调落地：`bot_config.json` 加 `reply_if_unauthorized: false`；`bot.py` 打印来源 `chat_id`（便于配白名单）+ 非白名单群静默/提示可配；`08` 补附录 A（权限清单）与附录 B（测试群白名单配置）
-- [ ] **核对权限与发布**（`08` 附录 A）：启用机器人能力 + `im:message` / `im:message:send_as_bot` / `im:message.group_at_msg` + 事件订阅 `im.message.receive_v1`（长连接方式）→ **创建版本并发布** → 把机器人拉进测试群
-- [ ] **指定测试群**（`08` 附录 B）：群里 @机器人发一条 → 看控制台 `[lark] chat_id=oc_...` → 填进 `bot_config.json` 的 `allowed_chats` → 重启
-- [ ] 群里 @机器人 用 `/battle` `/price` `/weekly` `/discover` 跑 `06` 验收表（重点 4 个 P0 必测）
+- [x] **长连接实测通但暴露根因**：实测 `connected to wss://msg-frontier.feishu.cn` 成功；但开发期反复「杀→起」触发飞书「同应用仅一个活跃连接」限制，旧连接僵尸导致事件路由到死连接（表现「@机器人没反应」）。已修代码 bug（`_reply` 缺 `request_body` 一层）+ 加单实例锁（`bot.py` 原子 `O_EXCL`，`.gitignore` 加 `.bot.lock`）
+- [x] **换方案 B（HTTP Webhook 替代长连接）**：已写 `backend/webhook_server.py`（FastAPI，复用 `bot.py` 的 `LarkBot.handle_message`，含飞书验签 + `url_verification` 挑战 + 事件过滤），彻底规避单连接限制
+- [ ] **本地验证 webhook 全链路**：起 `uvicorn webhook_server:app` + 模拟飞书 POST `im.message.receive_v1` 事件 → 确认群里真实收到回复（验证「接收→解析→回复 API 成功发出」）
+- [ ] `08` 补附录 C：HTTP 回调 + 内网穿透（cloudflared/ngrok）方案，含飞书后台事件订阅改 Webhook 接收方式
+- [ ] 用户侧：装隧道暴露公网 → 飞书后台事件订阅接收方式从「长连接」改「Webhook 回调地址」填隧道 URL → 群内 @机器人 跑 `06` 验收表（4 个 P0 必测）
 - [ ] 不过则回 `validation/prompts/*.txt` 改红线 → 重跑 `run.py` 回归 → commit → 同步（保持单一真相）
 
 ### 下一步开发（目标已对齐 → 选项 A 已完成）
@@ -151,3 +151,4 @@
 - 风险测试必须用未见过的竞品/行业 query，禁止用 `05` 的 few-shot 示例（防复读假阳性）。
 - `.env` 已 gitignore，API Key 不入库。
 - 长期项目约定另存 `.workbuddy/memory/MEMORY.md`（跨 session 生效）。
+- **【长运行命令管理】** 任何命令/操作（尤其后台服务、等待、安装、跑测试）若实际或预计运行**超过 10 分钟**，必须主动暂停，先描述当前进展，再让用户确认是否继续；禁止闷头长时间运行不汇报。

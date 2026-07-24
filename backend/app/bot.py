@@ -7,9 +7,12 @@
 
 替代此前卡在 UI 的「Aily 平台自定义智能体」创建方式。
 """
+import atexit
 import json
 import os
 import re
+import subprocess
+import sys
 import threading
 from pathlib import Path
 from typing import Optional
@@ -22,6 +25,8 @@ from .engine import analyze, list_scenes
 
 # 声明式配置（不含密钥，密钥走 .env）
 CONFIG_PATH = Path(__file__).resolve().parent.parent / "bot_config.json"
+# 单实例锁：飞书长连接同一应用只允许一个活跃连接，多开会路由到僵尸旧连接
+LOCK_PATH = Path(__file__).resolve().parent.parent / ".bot.lock"
 
 
 def load_bot_config() -> dict:
@@ -137,9 +142,13 @@ class LarkBot:
         req = (
             CreateMessageRequest.builder()
             .receive_id_type("message_id")
-            .receive_id(msg.message_id)
-            .msg_type("text")
-            .content(content)
+            .request_body(
+                CreateMessageRequestBody.builder()
+                .receive_id(msg.message_id)
+                .msg_type("text")
+                .content(content)
+                .build()
+            )
             .build()
         )
         resp = self.client.im.v1.message.create(req)
@@ -161,7 +170,54 @@ def build_event_handler():
     )
 
 
+def _is_pid_alive(pid: int) -> bool:
+    if os.name == "nt":
+        # 中文 Windows 下 tasklist 输出为 GBK，需按字节读再解码，避免 UTF-8 解码报错
+        proc = subprocess.run(
+            ["tasklist", "/FI", f"PID eq {pid}"],
+            capture_output=True,
+        )
+        out = proc.stdout.decode("gbk", errors="ignore")
+        return str(pid) in out
+    try:
+        os.kill(pid, 0)
+        return True
+    except OSError:
+        return False
+
+
+def _acquire_single_instance() -> None:
+    """确保全局只有一个 Bot 长连接。
+
+    飞书长连接同一应用只允许一个活跃连接；多开会因为旧连接僵尸（被 kill 后飞书靠心跳
+    才发现死掉）导致事件路由到已死的实例，表现为『群里 @机器人 没反应』。
+    用 PID 锁 + 原子 O_EXCL 创建保证单实例（杜绝竞态），并清理残留的过期锁。
+    """
+    for _ in range(5):
+        if LOCK_PATH.exists():
+            try:
+                old_pid = int(LOCK_PATH.read_text(encoding="utf-8").strip())
+            except (ValueError, OSError):
+                old_pid = None
+            if old_pid and _is_pid_alive(old_pid):
+                print(f"[lark] 已有实例在运行（PID={old_pid}），本进程退出以避免重复长连接。")
+                sys.exit(0)
+            # 旧锁已失效（进程不在），删掉重试
+            LOCK_PATH.unlink(missing_ok=True)
+        try:
+            fd = os.open(str(LOCK_PATH), os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+        except FileExistsError:
+            continue  # 被别的实例抢先创建，下一轮循环再判断
+        os.write(fd, str(os.getpid()).encode("utf-8"))
+        os.close(fd)
+        atexit.register(lambda: LOCK_PATH.unlink(missing_ok=True))
+        return
+    print("[lark] 无法获取单实例锁，可能已有实例在运行，本进程退出。")
+    sys.exit(1)
+
+
 def main():
+    _acquire_single_instance()
     global _bot
     _bot = LarkBot()
     handler = build_event_handler()
