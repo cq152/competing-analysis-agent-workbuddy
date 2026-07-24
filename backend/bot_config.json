@@ -3,6 +3,7 @@
   "default_scene": "battle_card",
   "require_mention_in_group": true,
   "allowed_chats": [],
+  "reply_if_unauthorized": false,
   "scene_aliases": {
     "/battle": "battle_card",
     "/price": "pricing",

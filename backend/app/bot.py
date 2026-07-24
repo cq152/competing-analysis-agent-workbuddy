@@ -36,6 +36,7 @@ DEFAULT_SCENE = BOT_CONFIG.get("default_scene", "battle_card")
 BOT_NAME = BOT_CONFIG.get("bot_name", "竞品分析搭档")
 REQUIRE_MENTION_IN_GROUP = BOT_CONFIG.get("require_mention_in_group", True)
 ALLOWED_CHATS = BOT_CONFIG.get("allowed_chats", [])  # 空=不限制
+REPLY_IF_UNAUTHORIZED = BOT_CONFIG.get("reply_if_unauthorized", False)  # 非白名单群是否回提示
 
 # 场景路由：命令前缀 -> scene key（可被 bot_config.json 的 scene_aliases 覆盖）
 SCENE_ALIASES = {
@@ -98,8 +99,12 @@ class LarkBot:
         if msg.chat_type == "group" and REQUIRE_MENTION_IN_GROUP:
             if not getattr(msg, "mentions", None):
                 return
+        # 打印来源群 ID，便于把测试群填进 allowed_chats 白名单
+        print(f"[lark] chat_id={msg.chat_id} chat_type={msg.chat_type}")
         # 群权限白名单
         if ALLOWED_CHATS and msg.chat_id not in ALLOWED_CHATS:
+            if REPLY_IF_UNAUTHORIZED:
+                self._reply(msg, "本群未在白名单内，请联系管理员配置 allowed_chats。")
             return
         if msg.message_type != "text":
             self._reply(msg, "目前只支持文本消息，请直接输入竞品分析问题。")

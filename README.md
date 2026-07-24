@@ -106,9 +106,11 @@
 
 ### 进行中 / 待你执行（飞书接入，代码方式）
 - [x] **创建方式已换道**：从「Aily 平台手动创建自定义智能体」改为「代码声明式飞书自建 Bot」（`08` + `backend/run_bot.py`）
-- [ ] 飞书开发者后台建**企业自建应用**，拿 App ID/Secret；开机器人权限 + 订阅事件 `im.message.receive_v1`（接收方式选「长连接」）
-- [ ] 填 `backend/.env` 的 `FEISHU_APP_ID`/`FEISHU_APP_SECRET` + `OPENAI_API_KEY`
-- [ ] 启动 `python backend/run_bot.py`，控制台出现 `connected to wss://` 即长连接成功
+- [x] 飞书开发者后台已建**企业自建应用**（App ID `cli_aae8...`，2026-07-24），凭证已入 `backend/.env`（gitignore 不入库）
+- [x] **长连接实测成功**：`python backend/run_bot.py` 已跑通，控制台出现 `connected to wss://msg-frontier.feishu.cn`，凭证有效
+- [x] 代码微调落地：`bot_config.json` 加 `reply_if_unauthorized: false`；`bot.py` 打印来源 `chat_id`（便于配白名单）+ 非白名单群静默/提示可配；`08` 补附录 A（权限清单）与附录 B（测试群白名单配置）
+- [ ] **核对权限与发布**（`08` 附录 A）：启用机器人能力 + `im:message` / `im:message:send_as_bot` / `im:message.group_at_msg` + 事件订阅 `im.message.receive_v1`（长连接方式）→ **创建版本并发布** → 把机器人拉进测试群
+- [ ] **指定测试群**（`08` 附录 B）：群里 @机器人发一条 → 看控制台 `[lark] chat_id=oc_...` → 填进 `bot_config.json` 的 `allowed_chats` → 重启
 - [ ] 群里 @机器人 用 `/battle` `/price` `/weekly` `/discover` 跑 `06` 验收表（重点 4 个 P0 必测）
 - [ ] 不过则回 `validation/prompts/*.txt` 改红线 → 重跑 `run.py` 回归 → commit → 同步（保持单一真相）
 

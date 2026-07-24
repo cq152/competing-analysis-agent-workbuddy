@@ -87,3 +87,34 @@ python run_bot.py
 - 监控雷达 + 定时周报：长连接模式可加定时器进程触发 `engine.analyze` 后主动推群（待实现）。
 - 多模态（截图/白皮书）：`im.message.receive_v1` 含 file/image 事件，后续接 engine 多模态。
 - 企业权限：若企业禁止成员建自建应用，仍需管理员开通（这是唯一外部依赖）。
+
+---
+
+## 附录 A · 权限清单（scope，建应用时逐项核对）
+
+| 类别 | 项目 | 说明 |
+|---|---|---|
+| 应用能力 | **机器人** | 应用功能 → 机器人 → 启用（不启用无法进群/收发消息） |
+| 权限 scope | `im:message` | 读取用户发给机器人的消息 |
+| 权限 scope | `im:message:send_as_bot` | 以机器人身份发送消息（回复必需） |
+| 权限 scope | `im:message.group_at_msg` | 接收群聊中 @机器人 的消息（群场景必需） |
+| 事件订阅 | `im.message.receive_v1`（接收消息 v2.0） | 订阅后才有消息事件；接收方式必须选「**长连接**」而非 Webhook URL |
+| 发布 | 创建版本并发布（企业内可用） | 未发布时权限不生效；发布后把机器人拉进测试群 |
+
+> 权限变更后需**重新发布版本**才生效；若群里 @机器人 无反应，先查「事件订阅是否为长连接」和「版本是否已发布」。
+
+## 附录 B · 指定测试群配置（allowed_chats 白名单）
+
+1. 先保持 `backend/bot_config.json` 的 `"allowed_chats": []`（空 = 不限群）启动 Bot。
+2. 在目标测试群 @机器人 发任意消息，控制台会打印：
+   ```
+   [lark] chat_id=oc_xxxxxxxx chat_type=group
+   ```
+3. 把该 `oc_` 开头的 chat_id 填进白名单，并确认静默策略：
+   ```json
+   "allowed_chats": ["oc_xxxxxxxx"],
+   "reply_if_unauthorized": false
+   ```
+   - `reply_if_unauthorized: false`（默认）：非白名单群**静默不回**，机器人存在感为零；
+   - 设为 `true`：非白名单群回一句"本群未在白名单内"提示。
+4. 重启 `run_bot.py` 生效。之后机器人只响应白名单群 + 私聊。
