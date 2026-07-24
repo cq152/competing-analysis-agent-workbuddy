@@ -83,7 +83,7 @@
 | `aily/` | **飞书 Aily 导入包（参考）**：`人设.txt`+开场白+监控配置，粘进去即用；**已被 `08` 代码创建方式替代，主推不再走 Aily UI** | 路线 A 参考 |
 | `validation/` | **本地验证脚手架**：抽离 `03`/`05` 提示词为可版本化 `prompts/*.txt`，CLI 支持 dry-run 与 LLM 调用、风险测试 | 路线 A 验证 |
 | `07-自建后端技术方案（预研骨架）.md` | 路线 B 预研：架构/接口契约/数据模型/与 02 关系/与 Aily 取舍/实施步骤（待 Gate） | 路线 B |
-| `backend/` | **主通道**：`run_bot.py` 飞书 WebSocket 长连接 Bot（免公网，接分析引擎）+ FastAPI 预研骨架（`/health`、`/api/analyze` 复用 `validation/prompts`、`/webhook/feishu`） | 路线 B/MVP |
+| `backend/` | **主通道**：`webhook_server.py` 统一 FastAPI（飞书 HTTP Webhook + `/api/analyze` + `/health`，复用 `validation/prompts`）；`run_bot.py` 长连接备选；`app/main.py` 预研骨架已废弃 | 路线 B/MVP |
 | `08-飞书自建Bot接入方案（基于bridge思路）.md` | 借鉴 lark-coding-agent-bridge：用代码声明式创建飞书接入层（企业自建应用+WebSocket 长连接+config.json），**替代 Aily UI 手动创建** | 路线 A 替代 |
 | **既有资产（原始素材，未纳入主线）** | `竞品分析专员 · 能力全景介绍.md`、`竞品分析师智能体：能力说明与使用指南.md`、`竞品分析师智能体：设计逻辑、专业范围与能力全景.md`、`竞品分析师介绍 - 我能帮你做什么.md`、`行业_竞品深度研究专家 · 智能体介绍.md`、`竞品分析+舆情分级 智能体功能建议 deepseek.md` | 参考 |
 
@@ -110,8 +110,12 @@
 - [x] **长连接实测通但暴露根因**：实测 `connected to wss://msg-frontier.feishu.cn` 成功；但开发期反复「杀→起」触发飞书「同应用仅一个活跃连接」限制，旧连接僵尸导致事件路由到死连接（表现「@机器人没反应」）。已修代码 bug（`_reply` 缺 `request_body` 一层）+ 加单实例锁（`bot.py` 原子 `O_EXCL`，`.gitignore` 加 `.bot.lock`）
 - [x] **换方案 B（HTTP Webhook 替代长连接）**：已写 `backend/webhook_server.py`（FastAPI，复用 `bot.py` 的 `LarkBot.handle_message`，含飞书验签 + `url_verification` 挑战 + 事件过滤），彻底规避单连接限制
 - [x] **本地验证 webhook 全链路通过**：起 `uvicorn webhook_server:app`（端口 8011）+ 模拟飞书 POST `im.message.receive_v1` 事件 → 群里真实收到 HELP 回复 + 「分析中」+ battle_card 应对卡（接收→解析→场景路由→调 DeepSeek 引擎→回复到群 全链路通）；`_reply` 改用 `receive_id_type=chat_id`（飞书 `message_id` 引用回复报 99992402）
-- [ ] `08` 补附录 C：HTTP 回调 + 内网穿透（cloudflared/ngrok）方案，含飞书后台事件订阅改 Webhook 接收方式
-- [ ] 用户侧：装隧道暴露公网 → 飞书后台事件订阅接收方式从「长连接」改「Webhook 回调地址」填隧道 URL → 群内 @机器人 跑 `06` 验收表（4 个 P0 必测）
+- [x] `08` 补附录 C：HTTP 回调 + 内网穿透（cloudflared/ngrok）方案，含飞书后台事件订阅改 Webhook 接收方式
+- [x] **ngrok 隧道已就绪**（`sitter-shrubbery-washout.ngrok-free.dev` → `:8011`），飞书后台已配置 Webhook 回调并发布
+- [x] **项目架构清理**（2026-07-24）：合并 `app/main.py` 有用路由（`/health`、`/api/analyze`）到 `webhook_server.py`；标记 `app/main.py`、`app/feishu.py`、`app/sessions.py` 为废弃；统一根 README 与 backend/README 文档标注 Webhook 为主通道
+- [x] **飞书 Webhook 端到端全通**：用户确认测试群内真实收到 bot 回复（飞书事件服务器 `14.153.53.165` 多次 `POST /webhook/event` → 200 + 打印 `chat_id` = 验签通过 + 回复成功发出）；那次 `401` 来自公网扫描器假请求（不同 IP 段），无害
+- [ ] **`06` 验收表 4 个 P0 已触发到群、待用户下次验收**：用 `backend/_run_p0.py` 把 PR-02/SYS-04/AD-01/AD-02 四条真实打到测试群（全部 POST 200、无 `reply failed`）；验收红线——PR-02/SYS-04/AD-01 不得编具体数字（G1）、AD-02 不得附和贬低（G7）。**用户 17:31 暂暂停，下次来继续验收**
+- [ ] **下次衔接 SOP（重要）**：本会话后台的 uvicorn / ngrok 进程可能被回收，且 ngrok-free 域名（`sitter-shrubbery-washout.ngrok-free.dev`）是临时的、重启会变。下次来请：① 自己终端 `cd backend && .venv\Scripts\python.exe -u -m uvicorn webhook_server:app --host 127.0.0.1 --port 8011`；② `env -u http_proxy -u https_proxy -u HTTP_PROXY -u HTTPS_PROXY ngrok http 8011` 拿新域名；③ 飞书后台事件订阅 Webhook 地址改成新域名 `/webhook/event` 并重新发布；④ 用 `/battle` `/price` 等在群真 @ 或重跑 `_run_p0.py` 验收
 - [ ] 不过则回 `validation/prompts/*.txt` 改红线 → 重跑 `run.py` 回归 → commit → 同步（保持单一真相）
 
 ### 下一步开发（目标已对齐 → 选项 A 已完成）
