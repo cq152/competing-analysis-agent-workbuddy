@@ -123,6 +123,9 @@ class LarkBot:
         if not clean or clean in ("/help", "帮助", "?"):
             self._reply(msg, HELP_TEXT)
             return
+        if clean.startswith("/monitor"):
+            self._handle_monitor(msg, clean)
+            return
         scene, query = self.parse_command(clean)
         # 异步分析，避免阻塞回调触发超时重试
         threading.Thread(
@@ -141,13 +144,17 @@ class LarkBot:
         # 飞书 `im.v1.message.create` 实测：receive_id_type="message_id"（引用回复）报
         # 99992402 field validation failed；改用 receive_id_type="chat_id" 发到群最稳
         # （群内以 bot 独立消息呈现，可见且不依赖消息 id 格式）。
+        self.push(msg.chat_id, text)
+
+    def push(self, chat_id: str, text: str) -> bool:
+        """主动向指定群推送消息（监控雷达用）。返回是否发送成功。"""
         content = json.dumps({"text": text}, ensure_ascii=False)
         req = (
             CreateMessageRequest.builder()
             .receive_id_type("chat_id")
             .request_body(
                 CreateMessageRequestBody.builder()
-                .receive_id(msg.chat_id)
+                .receive_id(chat_id)
                 .msg_type("text")
                 .content(content)
                 .build()
@@ -156,7 +163,53 @@ class LarkBot:
         )
         resp = self.client.im.v1.message.create(req)
         if not resp.success():
-            print(f"[lark] reply failed: code={resp.code} msg={resp.msg}")
+            print(f"[lark] push failed: code={resp.code} msg={resp.msg}")
+            return False
+        return True
+
+    def _handle_monitor(self, msg, text: str) -> None:
+        """处理 /monitor add|list|remove 子命令（v3 监控雷达入口）。"""
+        from app.monitor import get_monitor_service
+
+        parts = text.split(maxsplit=2)
+        if len(parts) < 2:
+            self._reply(
+                msg,
+                "用法：\n  /monitor add <竞品名>\n  /monitor list\n  /monitor remove <ID>",
+            )
+            return
+        sub = parts[1]
+        svc = get_monitor_service(self)
+
+        if sub == "add":
+            competitor = parts[2].strip() if len(parts) > 2 else ""
+            if not competitor:
+                self._reply(msg, "请指定竞品名，如 /monitor add 飞书")
+                return
+            mid = svc.store.add(competitor, msg.chat_id)
+            self._reply(msg, f"✅ 已加入监控 #{mid}：{competitor}（定时搜索，有变化推群）")
+        elif sub == "list":
+            items = svc.store.list(msg.chat_id)
+            if not items:
+                self._reply(msg, "本群暂无可监控竞品。用 /monitor add <竞品名> 添加。")
+                return
+            lines = ["📡 本群监控列表："]
+            for m in items:
+                lines.append(f"  #{m['id']} {m['competitor']}（场景：{m['scene']}）")
+            self._reply(msg, "\n".join(lines))
+        elif sub == "remove":
+            try:
+                mid = int(parts[2].strip())
+            except (ValueError, IndexError):
+                self._reply(msg, "请指定要删除的监控 ID，如 /monitor remove 1")
+                return
+            ok = svc.store.remove(mid, msg.chat_id)
+            self._reply(msg, "✅ 已删除" if ok else "⚠️ 未找到该 ID 或无权删除")
+        else:
+            self._reply(
+                msg,
+                "未知子命令。用法：\n  /monitor add <竞品名>\n  /monitor list\n  /monitor remove <ID>",
+            )
 
 
 def do_p2_im_message_receive_v1(data: lark.im.v1.P2ImMessageReceiveV1) -> None:

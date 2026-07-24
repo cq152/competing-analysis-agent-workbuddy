@@ -4,3 +4,7 @@
 venv/
 __pycache__/
 .bot.lock
+
+# 运行时数据（SQLite 监控库等，含测试产物）
+backend/data/
+data/

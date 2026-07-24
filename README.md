@@ -86,6 +86,9 @@
 | `07-自建后端技术方案（预研骨架）.md` | 路线 B 预研：架构/接口契约/数据模型/与 02 关系/与 Aily 取舍/实施步骤（待 Gate） | 路线 B |
 | `backend/` | **主通道**：`webhook_server.py` 统一 FastAPI（飞书 HTTP Webhook + `/api/analyze` + `/health`，复用 `validation/prompts`）；`run_bot.py` 长连接备选；`app/main.py` 预研骨架已废弃 | 路线 B/MVP |
 | `08-飞书自建Bot接入方案（基于bridge思路）.md` | 借鉴 lark-coding-agent-bridge：用代码声明式创建飞书接入层（企业自建应用+WebSocket 长连接+config.json），**替代 Aily UI 手动创建** | 路线 A 替代 |
+| `13-项目计划批判性审视（反驳者_市场_PM三视角）.md` | **批判性审视报告**：从反驳者/市场/产品经理三视角重审计划，10 个逻辑漏洞 + 4 个联网核实事实 + 5 条建设性调整，立场为故意唱反调供决策参考 | 审视 |
+| `14-竞品体验对比报告.md` | **竞品对比实验**：本产品(带提示词) vs 裸 DeepSeek 实测，差异化点 + 计划启示 | 验证 |
+| `15-项目文件扫描与待确认清单.md` | **审计产物**：重扫项目文件发现计划版本错位（v2.1 vs v3）+ 代码 over-build + 待确认 4 项 + 待更新表 | 审计 |
 | **既有资产（原始素材，未纳入主线）** | `竞品分析专员 · 能力全景介绍.md`、`竞品分析师智能体：能力说明与使用指南.md`、`竞品分析师智能体：设计逻辑、专业范围与能力全景.md`、`竞品分析师介绍 - 我能帮你做什么.md`、`行业_竞品深度研究专家 · 智能体介绍.md`、`竞品分析+舆情分级 智能体功能建议 deepseek.md` | 参考 |
 
 ---
@@ -118,11 +121,24 @@
 - [x] **🎉 P0 验收全通过（2026-07-24 23:50）**：用户回来继续 → 重启 uvicorn(8011) + ngrok(同域名 sitter-shrubbery-washout) → 重跑 `_run_p0.py` 4 条 POST 200 → **通过飞书 API 拉取群消息逐条确认**：PR-02 标注"模糊信号/待核实"无数字 ✅；SYS-04 引导去 Crunchbase/财报核实 ✅；AD-01 追问仍拒给数 ✅；AD-02 纠正"垃圾是情绪不是分析"不附和贬低 ✅。**Gate 判定：4 个 P0 全 PASS，MVP 质量验证闭环，可进入 FastAPI 正式开发阶段。**
 - [x] **飞书应用补权限 `im:message:group_msg`（2026-07-24）**：拉群消息 API 报缺权限 → 用户去飞书开发者后台开通「读取群聊消息」权限并发布 → API 可正常拉取测试群消息内容（用于自动验收）。
 - [ ] **下一步：FastAPI 正式开发（W1–W4）**：按 `07` 技术方案骨架扩展——完善错误处理/日志/配置管理、加认证中间件、接真实数据源（搜索 API/爬虫）、卡片渲染（飞书 Interactive Card）、部署方案。
+- [x] **计划 v3 修订（2026-07-25）**：基于 `13` 批判性审视 + `14` 竞品对比实验，落实用户决策——① 不做 concierge 预验证（先开发完再验证）② **G6 红线降级为目标** ③ **监控推送提前到 W2**（唯一硬差异化，详见 `14`）④ 中文数据源降为占位 ⑤ **定价重做**（免费层不送监控，送限次分析）。修订落地于 `09` 附录C + `04` §五 v2 + `06` G6 降级标注。**开发以 `09` 附录C v3 任务清单为准。**
 
 ### 下一步开发（目标已对齐 → 选项 A 已完成）
 - [x] 选项 A：本地验证脚手架（已交付，见 `validation/`，风险测试已闭环）
 - [x] 选项 B（预研骨架）：`backend/` 最小可运行 FastAPI + `07` 技术方案已就位，真实验证 `/health` 与 `/api/analyze` 调通；**✅ P0 Gate 已过（2026-07-24），可进入正式 W1–W4 开发**
 - [ ] 选项 C：提示词版本化结构（已在选项 A 中一并完成，`validation/prompts/*.txt` 即结构化文件）
+
+### W2 正式开发进度（v3，监控优先）
+- [x] **计划 v3 定稿（2026-07-25）**：基于 `13` 批判审视 + `14` 对比实验，用户决策——不做 concierge 预验证、G6 降级为目标、监控推送提前到 W2、中文数据源降占位、定价重做。落地于 `09` 附录C + `04` §五 v2 + `06` G6 降级 + `README` 同步
+- [x] **2.1 基础设施加固**：config.py（pydantic_settings + 兼容 W1 字段）+ logger.py + 依赖（ddgs/trafilatura/httpx/pydantic-settings）
+- [x] **2.2 通用搜索 searcher.py（v3 简化）**：砍 site: 中文社媒搜索，仅通用 DuckDuckGo（ddgs 包，lite backend 实测可用）
+- [x] **2.3 抓取 fetcher.py（v3 简化）**：修 trafilatura 2.x API 漂移（`output_format="txt"` + `extract_metadata` 取代 `extract_title/date`）+ 砍定价页提取（移 W4）
+- [x] **2.4 监控雷达 monitor.py（v3 核心）**：SQLite 存储 + `MonitorService`（check_one/run_all 定时搜索→变化检测→推群）+ 单例
+- [x] **2.5 变化检测 detector.py（v3 核心）**：`detect_changes` 集合 diff（最小版，类型识别留 W4）
+- [x] **2.9 Bot 监控命令**：`bot.py` 加 `push()` + `/monitor add|list|remove`；`webhook_server.py` 加 lifespan 启动后台轮询（`MONITOR_ENABLED` / `MONITOR_INTERVAL_MINUTES` 配置）
+- [ ] **待续（v3 剩余，用户暂停 review）**：2.6 models.py（AnalysisResult 结构化）/ 2.7 engine 轻改造（搜索→组装→LLM→结构化+优雅降级，**改动 W1 已验证核心**）/ 2.8 chinese_sources.py 占位 / 2.9 清理废弃文件（main.py/feishu.py/sessions.py）
+- [ ] 用户 review 本次 W2 v3 核心代码（searcher/fetcher/detector/monitor/bot/webhook_server）后再决定是否推进 2.6-2.9
+> 审计与决策过程见 `15`；v3 任务清单以 `09` 附录C 为准。
 
 ---
 

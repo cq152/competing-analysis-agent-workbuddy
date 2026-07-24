@@ -3,3 +3,9 @@ uvicorn
 openai
 python-dotenv
 lark-oapi
+
+# ===== W2 新增 =====
+ddgs>=6.0                  # 通用搜索引擎（DuckDuckGo 官方维护包，原 duckduckgo-search 已废弃）
+trafilatura>=1.8            # 网页正文提取
+httpx>=0.27                 # 异步 HTTP 客户端（飞书 API / 抓取 fallback / 天眼查 REST）
+pydantic-settings>=2.0      # 增强配置管理（替代 dotenv + os.getenv）
