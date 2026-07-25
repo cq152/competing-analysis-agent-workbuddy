@@ -151,6 +151,9 @@ class LarkBot:
                 raw_text = raw_text.replace(key, "")
         clean = re.sub(r"@_user_[^\s@]+", "", raw_text)
         clean = re.sub(r"<at[^>]*>.*?</at>", "", clean, flags=re.DOTALL)
+        # 兜底：飞书新版自定义机器人 @ 格式可能直接是 "@机器人名" 而非 "@_user_xxx"
+        # （mentions 数组可能为空或 key 不匹配），去掉行首 "@xxx " 前缀避免命令路由失效
+        clean = re.sub(r"^@[^\s]+[\s　]+", "", clean)
         clean = clean.strip()
         if not clean or clean in ("/help", "帮助", "help", "?"):
             self._reply(msg, HELP_TEXT)
