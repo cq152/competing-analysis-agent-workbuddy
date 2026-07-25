@@ -151,7 +151,7 @@
 - [x] **2.7 引擎轻改造 engine.py（W1 核心防护）**：保留 W1 的 prompt 加载 + LLM 调用不变，追加通用搜索→抓取→上下文组装→注入，返回结构化 `AnalysisResult`；优雅降级（搜索/抓取失败回退纯 LLM + 标注「待核实」）；**不注入** G6/G1 硬性指令（v3 已降级）；同步改 `bot.py`（取 `res.analysis`）与 `webhook_server.py`（返回 `model_dump`）。已端到端冒烟：真实搜索（DDG 3 条）+ DeepSeek 返回 1778 字带引用分析；pricing 场景红线完好（模型主动标注「待核实」）
 - [x] **2.8 中文数据源占位 chinese_sources.py**：`SourceType` 枚举 + `DataPoint` + `ChineseSourceManager.search()` 默认返回 `[]`（enable=False），启用抛 `NotImplementedError` 指向 W4 实接
 - [x] **2.9 清理废弃文件**：`git rm` 删除 `app/main.py`/`app/feishu.py`/`app/sessions.py`（无活跃 import），修正 `webhook_server.py` 顶部过时注释
-- [x] **W2 v3 全部 9 个 Task 完成（2026-07-25）**：2.1–2.9 落地，含监控雷达（唯一硬差异化）+ 结构化分析引擎 + 优雅降级；下一步进入 W3（按 `09` 滚动计划细化）或先跑真实用户验证
+- [x] **W2 v3 全部 9 个 Task 完成（2026-07-25）**：2.1–2.9 落地，含监控雷达（唯一硬差异化）+ 结构化分析引擎 + 优雅降级；下一步进入 W3（按 `W2-开发记录与验收.md` §五 滚动计划细化）或先跑真实用户验证
 > 审计与决策过程见 `W2-开发记录与验收.md` §三；v3 任务清单以 `W2-开发记录与验收.md` §一为准。
 
 - [x] **W2 验证已落库（2026-07-25）**：详见 `W2-开发记录与验收.md` §四——代码层/引擎冒烟/红线回归全绿（真实 DDG 搜索 3 条 + DeepSeek 1778 字带引用；pricing 红线 G1 合规）；`06-测试记录表.csv` 追加 5 条 W2 代码层 PASS 行（W2-IMP/E2E/RED/RBAC/CLN）。**飞书集成项（MR-01/FS-*）仍待测**，需用户本地起服务 + ngrok + 飞书群实测。
