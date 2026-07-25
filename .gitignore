@@ -8,3 +8,9 @@ __pycache__/
 # 运行时数据（SQLite 监控库等，含测试产物）
 backend/data/
 data/
+
+# 运行时日志
+backend/logs/
+
+# Windows 保留设备名误创建的空文件
+nul
