@@ -1,7 +1,7 @@
 # 竞品分析 Agent · 项目总览
 
 > 一个跑在**飞书群**里的「竞品雷达 + 军师」，卖给**中小企业（SMB）**。
-> 当前阶段：**W2 后端开发完成（代码层 + 飞书集成 ngrok 实测全绿），W3 已完成**；✅ W2 **飞书集成已闭环**（FS-01/MR-01/FS-02 经 ngrok 公网实测 PASS，见 `06` 表）；W3 **3.1 卡片渲染 / 3.2 /compare 对比 / 3.3 会话持久化 / 3.4 webhook 加固 + 监控体验修复** 全部已提交；Aily 仅作参考，主通道为代码 Webhook（见 `08` + `开发记录与计划.md`）。
+> 当前阶段：**W3 代码功能层全部完成（3.1~3.5 + P0/P1/P2），飞书集成 webhook 链路验证通过**；✅ W2 **飞书集成已闭环**（FS-01/MR-01/FS-02 经 ngrok 公网实测 PASS，见 `06` 表）；W3 包含：卡片渲染 / 多竞品对比 / 会话持久化 / webhook 加固 / 监控体验修复 / 自然语言命令 / 帮助卡片化 / 首次@欢迎 / 报告卡片按钮 / 监控推送卡片化 / 提示卡片化 + 分析中等待反馈；Aily 仅作参考，主通道为代码 Webhook（见 `08` + `开发记录与计划.md`）。
 > 本文件是项目的单一事实来源（single source of truth）与版本管理入口。
 
 ---
@@ -88,7 +88,8 @@
 | `开发记录与计划.md` | **全程滚动开发记录**：按 W2/W3/W4 分章（计划+执行手册+审计+验证+遗留），合并原 09/11/15/16/17 | 开发记录 |
 | `07-自建后端技术方案（预研骨架）.md` | 路线 B 预研骨架 | W2 技术 |
 | `08-飞书自建Bot接入方案.md` | 代码声明式飞书接入（替代 Aily UI） | W2 技术 |
-| `backend/` | **主通道代码**：webhook_server.py + app/ | 代码 |
+| `backend/` | **主通道代码**：webhook_server.py + app/（bot/engine/monitor/sessions/card_renderer/searcher/fetcher/detector/models/config/logger/chinese_sources） | 代码 |
+| `飞书群实测用例.md` | 10 类 42 条飞书群实测用例（覆盖 W2/W3 全部功能） | W3 验证 |
 | `aily/` | Aily 导入包（参考，已降级） | 代码/参考 |
 | `validation/` | 提示词唯一入口 + 本地验证脚手架 | 代码/验证 |
 | `reference/` | 原始素材库（6 个竞品分析师介绍类 md，未纳入主线） | 素材 |
@@ -104,7 +105,7 @@
 |---|---|---|---|---|
 | **W1 调研与验证** | 市场/产品/定位/4 场景提示词/红线/风险测试/飞书接入（Aily→代码 Webhook） | **4 个 P0 飞书群实测 PASS**（PR-02/SYS-04/AD-01/AD-02），MVP Gate 闭环 | 多个（详见 `12`） | 进入 W2 正式开发 |
 | **W2 开发（v3，监控优先）** | 监控雷达（唯一硬差异化）+ 结构化分析引擎 + 优雅降级 + 中文源占位；v3 修订（G6降级/监控提前/中文源占位） | **代码层全 PASS**（端到端 DDG 3 条 + 1778 字带引用；pricing 红线 G1 合规）+ **飞书集成 PASS**（FS-01/MR-01/FS-02 经 ngrok 公网实测）；`06` 表追加 W2 PASS 行 | `af8a4a4` + `017b164` + `ffca813` + `cc7d9d8` | **飞书集成已闭环**：MR-01 监控推群 + FS-01 群聊@ + FS-02 周报 经 ngrok 公网实测 PASS（见 `06` 表） |
-| **W3 已完成** | 飞书卡片渲染 + `/compare` 对比 + 会话 SQLite 持久化 + webhook 加固 + 监控体验修复 + **自然语言命令** | 3.1 卡片渲染（`82c81a9`）；3.2 `/compare` 对比（`12a2a4e`）；3.3 sessions SQLite 持久化（`137098a`）；3.4 webhook 加固 + 监控体验修复（`d9c6784`，去重/静默期/频率上限/历史清理/日志中间件/限流/统一500/CORS）；**自然语言命令**（无需 `/` 前缀：对比 飞书 钉钉 / 监控 飞书 / 周报 / 帮助 等，38 项冒烟全绿） | 见 `开发记录与计划.md` W3 章 | W3-CP-04（/compare 真实群 webhook 链路）待用户本地实测 |
+| **W3 已完成** | 飞书卡片渲染 + `/compare` 对比 + 会话 SQLite 持久化 + webhook 加固 + 监控体验修复 + **自然语言命令** + **帮助卡片化 + 首次@欢迎** + **报告卡片按钮** + **监控推送卡片化** + **提示卡片化 + 分析中等待反馈** + @mention 解析双坑修复 | **代码层全绿**（38 项冒烟 + E2E 11/11 + ngrok 公网 card.action.trigger 200）；飞书群实测：@帮助正常回复、空@弹使用指南、监控轮询+频率限制生效、卡片按钮回调正常 | `82c81a9`→`12a2a4e`→`137098a`→`d9c6784`→`99f0230`→`3861aff`→`6658766`→`9728e39`→`6325f67`→`4da5044`→`db36496`→`acb9f29` | **飞书群实测验收待闭环**：需用户按《飞书群实测用例.md》42 条逐项实测，把 `06` 表 FS-* 标记 PASS；W3-CP-04（/compare 真实群 webhook）待测 |
 
 ### 已完成（本仓库已沉淀）
 - [x] 产品定位重设（SMB 视角，`04`）
@@ -158,6 +159,14 @@
 - [x] **W3.1 已提交（2026-07-25）**：3.1 `card_renderer.py`（飞书卡片渲染）+ `bot.py`（`push_card` 方法 + 卡片优先回复 + **mention 剥离 bugfix**）已提交；门禁（W2 飞书实测闭环）已满足（MR-01 经 ngrok 实测 PASS）。按 v3 修正（来源分色降级为仅 🔵通用、监控已前置不重复）。
 - [x] **W3.2 已提交（2026-07-25，`12a2a4e`）**：`validation/prompts/compare.txt`（新增提示词唯一入口）+ `engine.compare()` + `bot.py` 命令路由（`/compare` + 「和 X 对比」in-memory 记忆）+ `render_compare_card` 改造。离线冒烟 6 项全绿、真实 E2E 推群、红线回归（Pitch vs Gamma 不编造）PASS（见 `06` W3-CP-*）。
 - [x] **W3.3 已提交（2026-07-25，`137098a`）**：重建 `backend/app/sessions.py`（SQLite `sessions`+`analysis_history` 表）+ 单例 `get_session_store()`；`bot.py` 移除 `_last_compare` in-memory，主竞品记忆 + 每次分析历史跨重启持久化。离线冒烟（`_smoke33.py`）全绿（持久化往返 + 模拟重启不丢 + 无循环导入 + compare 链路完好），已重启 uvicorn 加载新代码（见 `06` W3-SE-01）。继续 3.4 webhook 加固。
+- [x] **W3.4 已提交（2026-07-25，`d9c6784`）**：webhook 加固（日志中间件 + 令牌桶限流 30req/min + 统一异常处理 + CORS）+ 监控体验修复（唯一索引去重 + 首次静默期 + 24h 频率上限 + 启动清理历史重复）。11 项冒烟全绿。
+- [x] **自然语言命令已提交（2026-07-25，`99f0230`）**：去掉 `/` 前缀，支持「对比 飞书 钉钉」「监控 飞书」「周报」「帮助」等自然语言命令。38 项冒烟全绿。
+- [x] **@mention 解析双坑修复（2026-07-25，`6658766`）**：① `webhook_server._to_event` 传的 mentions 是飞书原始 JSON dict，但 `bot.py` 用 `getattr(m, "key")` 取值 → dict 无 key 属性 → 永远 None → 修复为兼容 dict 和 namespace；② 兜底正则加无空格版本 `^@[^\s]+`。
+- [x] **W3.5 帮助卡片化 + 首次@欢迎（2026-07-25，`9728e39`）**：`render_help_card`（indigo 卡片，三栏分层）+ `render_onboarding_card`（green 卡片，3 个常用命令引导）+ sessions 加 `onboarded` 列 + `mark_onboarded` 幂等方法 + `_maybe_onboard` 首次@每群只推一次。
+- [x] **P1-1 报告卡片 action buttons（2026-07-25，`6325f67`）**：分析卡片底部加 3 按钮（🔄再分析一次 / 📡监控<竞品> / 📊切换为周报）+ 对比卡片按钮 + `card.action.trigger` 事件处理 + `handle_card_action` 方法。
+- [x] **P1-2 监控推送卡片化（2026-07-25，`4da5044`）**：`render_monitor_alert_card`（orange 卡片：变更明细 + 查看详情/删除监控按钮）+ `_push_alert_card` 替代纯文本 + `quick_unmonitor` 按钮命令。
+- [x] **P2 提示卡片化 + 分析中等待反馈（2026-07-25，`acb9f29`）**：`render_tip_card`（通用提示卡片，blue/green/red/orange 四色）+ `_push_tip` 方法（卡片优先失败回退文本）+ 分析中/对比中等待 → blue 卡片 + 失败 → red 卡片 + 用法提示 → orange 卡片 + 监控操作 → blue/green/orange 卡片。
+- [x] **飞书群实测用例文档（2026-07-25，`e02eabf`）**：《飞书群实测用例.md》10 类 42 条，覆盖 W2/W3 全部功能。
 
 ---
 
