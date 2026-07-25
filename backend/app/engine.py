@@ -87,6 +87,49 @@ def _gather_context(scene: str, query: str) -> tuple[list[Source], str]:
     return sources, context
 
 
+def _extract_outline(analysis: str) -> list[str]:
+    """从 markdown 分析文本中抽取大纲（##/### 标题），免费、零 LLM 调用。"""
+    out: list[str] = []
+    for ln in (analysis or "").splitlines():
+        m = re.match(r"^#{1,3}\s+(.+?)\s*$", ln)
+        if m:
+            out.append(m.group(1).strip())
+    return out[:12]
+
+
+def _summarize(scene: str, query: str, analysis: str) -> str:
+    """生成一句话核心结论（卡片顶部展示）。
+
+    用一次轻量 LLM 调用（小 max_tokens、低 temperature），不改动主分析 prompt，
+    保护 W1 已验证的分析质量。调用失败则回退到分析首句。
+    """
+    fallback = ""
+    first = re.split(r"[。\n！\?]", (analysis or "").strip())
+    if first:
+        fallback = first[0].strip()[:60]
+
+    client = OpenAI(api_key=settings.api_key, base_url=settings.base_url)
+    try:
+        resp = client.chat.completions.create(
+            model=settings.model,
+            temperature=0.2,
+            max_tokens=120,
+            messages=[
+                {
+                    "role": "system",
+                    "content": "你是竞品分析助手。请用一句话（不超过40个汉字）概括分析的核心结论，"
+                    "中文，直接给结论、不要寒暄、不要使用markdown。",
+                },
+                {"role": "user", "content": f"主题：{query}\n场景：{scene}\n分析：\n{analysis[:2500]}"},
+            ],
+        )
+        s = (resp.choices[0].message.content or "").strip()
+        s = s.strip("。").strip()
+        return s[:60] if s else fallback
+    except Exception:  # noqa: BLE001
+        return fallback
+
+
 def analyze(scene: str, query: str, target: str | None = None) -> AnalysisResult:
     """按场景加载提示词、注入实时搜索上下文并调用 LLM，返回结构化 AnalysisResult。
 
@@ -140,6 +183,8 @@ def analyze(scene: str, query: str, target: str | None = None) -> AnalysisResult
         confidence="medium",
         coverage_summary=coverage,
         note=note,
+        summary=_summarize(scene, query, analysis),
+        outline=_extract_outline(analysis),
     )
 
 
@@ -215,4 +260,49 @@ def compare(targets: list[str], query: str = "") -> CompareResult:
         insights=insights,
         sources=sources,
         note=note,
+        summary=_summarize("compare", combined_query, narrative or raw),
+        outline=_extract_outline(narrative or raw),
     )
+
+
+def classify_intent(text: str) -> str:
+    """意图鉴别：判断用户消息是否属于竞品分析类请求。
+
+    返回场景键（battle_card / pricing / weekly / discovery / compare）或 "unknown"。
+    - 用于修复「无关消息被默认强转为销售应对卡」的问题；unknown 时 bot 应澄清。
+    - LLM 调用失败时保守返回 "unknown"（避免把无关消息当分析处理而硬凑分析卡）。
+    """
+    known = {"battle_card", "pricing", "weekly", "discovery", "compare"}
+    client = OpenAI(api_key=settings.api_key, base_url=settings.base_url)
+    system = (
+        "你是竞品情报助手的意图分类器。判断用户消息是否属于竞品分析类请求。"
+        "只输出以下之一（不要任何解释或多余标点）：\n"
+        "battle_card —— 销售应对/话术/客户拿竞品压我们/怎么回竞品\n"
+        "pricing —— 价格/定价/报价/降价/收费\n"
+        "weekly —— 竞品周报/本周动态汇总\n"
+        "discovery —— 发现竞品/调研某赛道竞品/竞品名单\n"
+        "compare —— 明确对比两个及以上竞品（即使没写“对比”二字）\n"
+        "unknown —— 与竞品分析无关：闲聊、打招呼、UI/按钮报错、技术问题、非商业话题"
+    )
+    try:
+        resp = client.chat.completions.create(
+            model=settings.model,
+            temperature=0.0,
+            messages=[
+                {"role": "system", "content": system},
+                {"role": "user", "content": text},
+            ],
+        )
+        label = (resp.choices[0].message.content or "").strip().lower()
+        label = label.strip(" .,;:()[]{}")
+        # 容错：若模型附带了说明文字，提取首个命中标签
+        if label not in known:
+            for k in known:
+                if k in label:
+                    label = k
+                    break
+        if label in known:
+            return label
+        return "unknown"
+    except Exception:  # noqa: BLE001
+        return "unknown"

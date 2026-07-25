@@ -21,7 +21,7 @@ import lark_oapi as lark
 from lark_oapi.api.im.v1 import CreateMessageRequest, CreateMessageRequestBody
 
 from .config import settings
-from .engine import analyze, compare, list_scenes
+from .engine import analyze, compare, list_scenes, classify_intent
 from .sessions import get_session_store
 
 # 声明式配置（不含密钥，密钥走 .env）
@@ -64,6 +64,14 @@ SCENE_ALIASES = {
 }
 if isinstance(BOT_CONFIG.get("scene_aliases"), dict):
     SCENE_ALIASES.update(BOT_CONFIG["scene_aliases"])
+
+# 明显非竞品分析信号（UI 报错 / 闲聊中的故障描述）：命中直接澄清，
+# 不调 LLM、不生成销售应对卡（修复「查看详情按钮没效果」被误判为 battle_card 的 bug）
+_OFF_TOPIC_RE = re.compile(
+    r"(按钮|没反应|没效果|无反应|无效果|点击|单击|点不|报错|打不开|崩溃|"
+    r"加载|卡住|转圈|弹窗|白屏|404|查看详情)",
+    re.IGNORECASE,
+)
 
 
 def _default_help() -> str:
@@ -164,6 +172,8 @@ class LarkBot:
         clean = re.sub(r"^@[^\s]+[\s　]+", "", clean)
         clean = re.sub(r"^@[^\s]+", "", clean)
         clean = clean.strip()
+        # 去掉句首问候语（避免「你好，对比飞书钉钉」被误判；纯问候走帮助卡分支）
+        clean = re.sub(r"^(你好|您好|hi|hello|hey|嗨|哈喽)[,，。.\s]*", "", clean, flags=re.IGNORECASE).strip()
         print(f"[lark] clean={clean!r}")
         # W3.5：首次@欢迎（chat_id 维度，每群只推一次），不阻塞当前命令
         self._maybe_onboard(msg)
@@ -188,11 +198,15 @@ class LarkBot:
             self._handle_compare(msg, clean)
             return
         scene, query = self.parse_command(clean)
-        # 异步分析，避免阻塞回调触发超时重试
-        threading.Thread(
-            target=self._async_analyze, args=(msg, scene, query), daemon=True
-        ).start()
-        self._push_tip(msg.chat_id, "🔍 分析中", f"正在检索网络情报并生成**{scene}**分析…\n稍候片刻，结果即将送达。", "blue")
+        # 无命令前缀命中（parse_command 退回默认场景且未剥离任何别名）→ 先过意图鉴别，
+        # 避免「查看详情按钮没效果」这类无关消息被强转为销售应对卡。
+        if scene == DEFAULT_SCENE and query == clean:
+            threading.Thread(target=self._async_route, args=(msg, clean), daemon=True).start()
+        else:
+            threading.Thread(
+                target=self._async_analyze, args=(msg, scene, query), daemon=True
+            ).start()
+            self._push_tip(msg.chat_id, "🔍 分析中", f"正在检索网络情报并生成**{scene}**分析…\n稍候片刻，结果即将送达。", "blue")
 
     def _async_analyze(self, msg, scene: str, query: str) -> None:
         try:
@@ -207,6 +221,8 @@ class LarkBot:
             )
         except Exception as e:  # noqa: BLE001
             print(f"[lark] save analysis history failed: {e}")
+        # W4.3：尝试生成飞书云文档（完整图文报告），失败静默降级（doc_url 留空=卡片不挂链接）
+        self._attach_doc(res)
         # W3.1：富卡片优先，失败回退纯文本（不破坏 W1 已验证文本链路）
         try:
             from app.card_renderer import render_card
@@ -219,6 +235,46 @@ class LarkBot:
         # 回退：纯文本
         text = res.analysis if hasattr(res, "analysis") else str(res)
         self._reply(msg, text)
+
+    def _async_route(self, msg, clean: str) -> None:
+        """无命令前缀时的意图鉴别（异步，避免阻塞事件回调）。
+
+        - 命中明显非竞品分析信号（按钮报错等）→ 友好澄清，不生成分析卡；
+        - 其余交给 LLM 分类，判为 unknown（非竞品分析意图）→ 同样澄清；
+        - 判到具体场景（battle_card/pricing/weekly/discovery/compare）→ 正常分析。
+        """
+        if _OFF_TOPIC_RE.search(clean):
+            self._push_clarify_card(msg)
+            return
+        intent = classify_intent(clean)
+        if intent == "unknown":
+            self._push_clarify_card(msg)
+            return
+        if intent == "compare":
+            self._handle_compare(msg, clean)
+            return
+        # battle_card / pricing / weekly / discovery
+        self._push_tip(msg.chat_id, "🔍 分析中", f"正在检索网络情报并生成**{intent}**分析…\n稍候片刻，结果即将送达。", "blue")
+        self._async_analyze(msg, intent, clean)
+
+    def _push_clarify_card(self, msg) -> None:
+        """无关 / 无法识别为竞品分析意图时，友好澄清（不生成销售应对卡等分析卡）。"""
+        try:
+            from app.card_renderer import render_clarify_card
+
+            card = render_clarify_card()
+            if self.push_card(msg.chat_id, card):
+                return
+        except Exception as e:  # noqa: BLE001
+            print(f"[lark] clarify card failed, fallback to text: {e}")
+        self._reply(
+            msg,
+            "我是竞品雷达 + 军师，专注竞品分析。你可以这样问我：\n"
+            "「客户总拿飞书压我们，怎么应对？」（销售应对卡）\n"
+            "「钉钉降价了，我们怎么跟？」（定价分析）\n"
+            "「对比 飞书 钉钉 企业微信」（多竞品对比）\n"
+            "「监控 飞书」（添加竞品监控）",
+        )
 
     def _remember_main(self, chat_id: str, target: str) -> None:
         """记录本群上次主竞品，供「和 XX 对比」自动补位（3.3 持久化到 SQLite）。"""
@@ -274,6 +330,8 @@ class LarkBot:
             )
         except Exception as e:  # noqa: BLE001
             print(f"[lark] save compare history failed: {e}")
+        # W4.3：尝试生成飞书云文档（完整图文报告），失败静默降级
+        self._attach_doc(res)
         try:
             from app.card_renderer import render_card
 
@@ -284,6 +342,22 @@ class LarkBot:
             print(f"[lark] compare card render/send failed, fallback to text: {e}")
         text = res.analysis or str(res)
         self.push(chat_id, text)
+
+    def _attach_doc(self, res) -> None:
+        """W4.3：把分析结果生成飞书云文档（完整图文报告），并把链接挂到 res.doc_url。
+
+        失败静默降级（权限未开 / 网络异常）→ doc_url 留空，卡片退回全文展示，不影响主链路。
+        """
+        if not settings.feishu_docx_enabled:
+            return
+        try:
+            from app.docx_client import build_report_doc, build_report_markdown, report_title
+
+            md = build_report_markdown(res)
+            url = build_report_doc(report_title(res), md)
+            res.doc_url = url
+        except Exception as e:  # noqa: BLE001
+            print(f"[lark] cloud doc build skipped (docx permission?): {e}")
 
     def _reply(self, msg, text: str) -> None:
         # 飞书 `im.v1.message.create` 实测：receive_id_type="message_id"（引用回复）报

@@ -73,9 +73,20 @@ def render_analysis_card(res: AnalysisResult) -> dict:
 
     elements: list[dict] = []
 
-    # 1) 分析正文
+    # 0) 核心结论 + 报告大纲（W4 预览）
+    if res.summary:
+        elements.append({"tag": "markdown", "content": f"**📌 核心结论**\n\n{res.summary}"})
+    if res.outline:
+        ol = "\n".join(f"• {x}" for x in res.outline[:10])
+        elements.append({"tag": "markdown", "content": f"**📑 报告大纲**\n{ol}"})
+    if res.summary or res.outline:
+        elements.append({"tag": "hr"})
+
+    # 1) 分析正文（有云文档则截断预览，否则全文）
     body = res.analysis or "（分析内容为空）"
-    if len(body) > _MAX_BODY_LEN:
+    if res.doc_url and len(body) > 1500:
+        body = body[:1500] + "\n\n_…（以下为摘要，完整图文报告见云文档链接）_"
+    elif len(body) > _MAX_BODY_LEN:
         body = body[:_MAX_BODY_LEN] + "\n\n_…（内容过长已截断，完整版见对话）_"
     elements.append({"tag": "markdown", "content": body})
     elements.append({"tag": "hr"})
@@ -111,6 +122,10 @@ def render_analysis_card(res: AnalysisResult) -> dict:
         }
     )
 
+    # 4.5) 云文档入口（W4）
+    if res.doc_url:
+        elements.append({"tag": "markdown", "content": f"📄 [查看完整图文报告]({res.doc_url})"})
+
     # 5) 操作按钮（P1）：再分析 / 监控此竞品
     elements.append(_action_buttons(res.scene, res.query))
 
@@ -135,6 +150,15 @@ def render_compare_card(res: CompareResult) -> dict:
         header_title = f"⚖️ 对比：{' vs '.join(targets[:3])}"
 
     elements: list[dict] = []
+
+    # 0) 核心结论 + 报告大纲（W4 预览）
+    if res.summary:
+        elements.append({"tag": "markdown", "content": f"**📌 核心结论**\n\n{res.summary}"})
+    if res.outline:
+        ol = "\n".join(f"• {x}" for x in res.outline[:10])
+        elements.append({"tag": "markdown", "content": f"**📑 报告大纲**\n{ol}"})
+    if res.summary or res.outline:
+        elements.append({"tag": "hr"})
 
     # 1) 叙事正文
     if res.analysis:
@@ -183,6 +207,8 @@ def render_compare_card(res: CompareResult) -> dict:
     # 6) 操作按钮（P1）：再对比 / 监控
     targets = res.targets or []
     compare_query = " vs ".join(targets) if targets else ""
+    if res.doc_url:
+        elements.append({"tag": "markdown", "content": f"📄 [查看完整图文报告]({res.doc_url})"})
     elements.append(_action_buttons("compare", compare_query, competitors=targets))
 
     return {
@@ -251,6 +277,41 @@ def _extract_main_competitor(query: str) -> str:
     """从 query 中提取主要竞品名（取第一个非空词）。"""
     words = query.strip().split()
     return words[0] if words else ""
+
+
+def render_clarify_card() -> dict:
+    """无关消息的友好澄清卡（不套用任何分析场景 chrome，避免误导成分析卡）。"""
+    elements = [
+        {
+            "tag": "markdown",
+            "content": "👋 我是 **竞品雷达 + 军师**，专注帮你分析竞品动态。\n你刚才说的好像不是竞品分析问题，我就不硬凑分析卡啦～",
+        },
+        {"tag": "hr"},
+        {"tag": "markdown", "content": "**可以这样问我：**"},
+        {
+            "tag": "markdown",
+            "content": (
+                "- 🛡️ 「客户总拿飞书压我们，怎么应对？」→ 销售应对卡\n"
+                "- 💰 「钉钉降价了，我们怎么跟？」→ 定价分析\n"
+                "- ⚔️ 「对比 飞书 钉钉 企业微信」→ 多竞品对比\n"
+                "- 📊 「本周竞品周报」→ 周报生成\n"
+                "- 🔭 「我们做协同办公，帮我发现竞品」→ 竞品发现\n"
+                "- 📡 「监控 飞书」→ 添加竞品监控（有变化自动推群）"
+            ),
+        },
+        {
+            "tag": "markdown",
+            "content": "_如果在反馈机器人本身的 bug（如按钮点不开），把现象告诉我即可，我会转交开发同学排查。_",
+        },
+    ]
+    return {
+        "config": {"wide_screen_mode": True},
+        "header": {
+            "title": {"tag": "plain_text", "content": "💡 我没理解为竞品分析请求"},
+            "template": "grey",
+        },
+        "elements": elements,
+    }
 
 
 def render_monitor_alert_card(competitor: str, added: list[str], removed: list[str]) -> dict:

@@ -32,6 +32,10 @@ class AnalysisResult(BaseModel):
     # 覆盖率指标：{"general_web": 3, "chinese_social": 0, "tianyancha": 0, "total": 3}
     coverage_summary: dict = Field(default_factory=dict)
     note: str = ""                    # 优雅降级备注（如「未能获取实时数据，待核实」）
+    # W4 新增：卡片预览 + 云文档承接
+    summary: str = ""                 # 一句话核心结论（卡片顶部展示）
+    outline: list[str] = Field(default_factory=list)   # 报告大纲（## 小节标题列表）
+    doc_url: str = ""                 # 飞书云文档链接（完整图文报告）；空=未生成
 
 
 class CompareResult(BaseModel):
@@ -43,3 +47,7 @@ class CompareResult(BaseModel):
     insights: list[str] = Field(default_factory=list)
     sources: list[Source] = Field(default_factory=list)
     note: str = ""                         # 优雅降级备注（如「未能获取实时数据，待核实」）
+    # W4 新增：卡片预览 + 云文档承接
+    summary: str = ""                 # 一句话核心结论
+    outline: list[str] = Field(default_factory=list)   # 报告大纲
+    doc_url: str = ""                 # 飞书云文档链接；空=未生成

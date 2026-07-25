@@ -28,6 +28,9 @@ class Settings(BaseSettings):
     feishu_app_secret: str = Field(default="", alias="FEISHU_APP_SECRET")
     feishu_verification_token: str = Field(default="", alias="FEISHU_VERIFICATION_TOKEN")
     feishu_encrypt_key: str = Field(default="", alias="FEISHU_ENCRYPT_KEY")
+    # W4.3：云文档承接开关（开通 docx:document 权限后置 true）
+    feishu_docx_enabled: bool = Field(default=True, alias="FEISHU_DOCX_ENABLED")
+    feishu_doc_folder_token: str = Field(default="", alias="FEISHU_DOC_FOLDER_TOKEN")
 
     # ===== W2 新增：搜索配置 =====
     search_engine: str = "duckduckgo"          # 搜索引擎类型
