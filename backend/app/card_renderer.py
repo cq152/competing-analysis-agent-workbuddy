@@ -121,9 +121,9 @@ def render_analysis_card(res: AnalysisResult) -> dict:
 
 
 def render_compare_card(res: CompareResult) -> dict:
-    """竞品对比卡片（W3.2 预留接口，当前 CompareResult 由 engine 未启用）。
+    """竞品对比卡片（W3.2 启用）。
 
-    渲染目标列表 + 关键洞察；matrix 维度表暂以 markdown 呈现。
+    顶部渲染 narrative 叙事（同 analysis 卡片正文+来源+降级+页脚），其下为维度矩阵表与关键洞察。
     """
     targets = res.targets or []
     header_title = "⚖️ 竞品对比"
@@ -132,32 +132,49 @@ def render_compare_card(res: CompareResult) -> dict:
 
     elements: list[dict] = []
 
-    # 维度矩阵（markdown 表格）
+    # 1) 叙事正文
+    if res.analysis:
+        body = res.analysis
+        if len(body) > _MAX_BODY_LEN:
+            body = body[:_MAX_BODY_LEN] + "\n\n_…（内容过长已截断，完整版见对话）_"
+        elements.append({"tag": "markdown", "content": body})
+    else:
+        elements.append({"tag": "markdown", "content": "（未生成对比叙事）"})
+    elements.append({"tag": "hr"})
+
+    # 2) 维度矩阵（markdown 表格）
     if res.matrix:
-        rows = ["| 维度 | " + " | ".join(targets) + " |", "| --- | " + " | ".join(["---"] * len(targets)) + " |"]
+        header = ["维度"] + targets
+        rows = [
+            "| " + " | ".join(header) + " |",
+            "| " + " | ".join(["---"] * len(header)) + " |",
+        ]
         for dim, vals in res.matrix.items():
-            row = "| " + dim + " | " + " | ".join(str(vals.get(t, "—")) for t in targets) + " |"
-            rows.append(row)
+            row = [dim] + [str((vals or {}).get(t, "—")) for t in targets]
+            rows.append("| " + " | ".join(row) + " |")
         elements.append({"tag": "markdown", "content": "\n".join(rows)})
     else:
         elements.append({"tag": "markdown", "content": "（暂无维度数据）"})
-
     elements.append({"tag": "hr"})
 
-    # 洞察
+    # 3) 关键洞察
     if res.insights:
         ins = ["**💡 关键洞察**"] + [f"{i}. {x}" for i, x in enumerate(res.insights, 1)]
         elements.append({"tag": "markdown", "content": "\n".join(ins)})
     else:
         elements.append({"tag": "markdown", "content": "**💡 关键洞察**：（待生成）"})
 
-    # 来源（如有）
+    # 4) 参考来源
     if res.sources:
-        src = ["**📚 参考来源**"] + [
+        src = ["**📚 参考来源**（实时检索）"] + [
             f"{i}. {_source_badge(s.source_type)} [{s.title or s.url}]({s.url or '#'})"
             for i, s in enumerate(res.sources, 1)
         ]
         elements.append({"tag": "markdown", "content": "\n".join(src)})
+
+    # 5) 降级备注（note 非空 → 橙字提醒，不掩盖事实）
+    if res.note:
+        elements.append({"tag": "markdown", "content": f"⚠️ {res.note}"})
 
     return {
         "config": {"wide_screen_mode": True},

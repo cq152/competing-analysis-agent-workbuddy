@@ -21,7 +21,7 @@ import lark_oapi as lark
 from lark_oapi.api.im.v1 import CreateMessageRequest, CreateMessageRequestBody
 
 from .config import settings
-from .engine import analyze, list_scenes
+from .engine import analyze, compare, list_scenes
 
 # 声明式配置（不含密钥，密钥走 .env）
 CONFIG_PATH = Path(__file__).resolve().parent.parent / "bot_config.json"
@@ -72,6 +72,9 @@ HELP_TEXT = BOT_CONFIG.get("help_text") or _default_help()
 
 # 全局 bot 单例（在 main() 中创建，事件回调引用）
 _bot: Optional["LarkBot"] = None
+
+# W3.2「和 XX 对比」轻量记忆：chat_id -> 上次主竞品（3.3 sessions.py 持久化到 SQLite）
+_last_compare: dict[str, str] = {}
 
 
 class LarkBot:
@@ -133,6 +136,13 @@ class LarkBot:
         if clean.startswith("/monitor"):
             self._handle_monitor(msg, clean)
             return
+        if clean.startswith("/compare"):
+            self._handle_compare(msg, clean)
+            return
+        # 「和 X 对比」/「对比 X」自然语义：自动补上次主竞品（W3.2 in-memory）
+        if re.match(r"^(和\s+\S+\s*对比|对比\s+\S+)$", clean):
+            self._handle_compare_phrase(msg, clean)
+            return
         scene, query = self.parse_command(clean)
         # 异步分析，避免阻塞回调触发超时重试
         threading.Thread(
@@ -157,6 +167,56 @@ class LarkBot:
             print(f"[lark] card render/send failed, fallback to text: {e}")
         # 回退：纯文本
         text = res.analysis if hasattr(res, "analysis") else str(res)
+        self._reply(msg, text)
+
+    def _remember_main(self, chat_id: str, target: str) -> None:
+        """记录本群上次主竞品，供「和 XX 对比」自动补位（3.3 持久化）。"""
+        _last_compare[chat_id] = target
+
+    def _handle_compare(self, msg, text: str) -> None:
+        """处理 /compare A B [C]：显式多竞品对比。"""
+        rest = text[len("/compare"):].strip()
+        targets = [t for t in rest.split() if t]
+        if len(targets) < 2:
+            self._reply(msg, "用法：/compare <竞品A> <竞品B> [竞品C]\n例如：/compare 飞书 钉钉")
+            return
+        self._remember_main(msg.chat_id, targets[0])
+        threading.Thread(target=self._async_compare, args=(msg, targets), daemon=True).start()
+        self._reply(msg, "🔍 对比分析中，稍候…")
+
+    def _handle_compare_phrase(self, msg, text: str) -> None:
+        """处理「和 X 对比」/「对比 X」：提取 X，补上次主竞品成双目标。"""
+        cleaned = re.sub(r"^(和|对比)\s*", "", text)
+        cleaned = cleaned.replace("对比", "").strip()
+        parts = cleaned.split()
+        if not parts:
+            self._reply(msg, "用法：和 <竞品> 对比 / 对比 <竞品>（需先 /compare A B 记录主竞品）")
+            return
+        other = parts[0]
+        main = _last_compare.get(msg.chat_id)
+        if not main:
+            self._reply(msg, "还没有记录主竞品，请先用 /compare A B 指定，例如 /compare 飞书 钉钉")
+            return
+        self._remember_main(msg.chat_id, other)
+        threading.Thread(target=self._async_compare, args=(msg, [main, other]), daemon=True).start()
+        self._reply(msg, "🔍 对比分析中，稍候…")
+
+    def _async_compare(self, msg, targets: list[str]) -> None:
+        """异步跑对比引擎并卡片优先推送（复用 W3.1 push_card）。"""
+        try:
+            res = compare(targets)
+        except Exception as e:  # noqa: BLE001
+            self._reply(msg, f"对比分析失败：{e}")
+            return
+        try:
+            from app.card_renderer import render_card
+
+            card = render_card(res)
+            if card and self.push_card(msg.chat_id, card):
+                return
+        except Exception as e:  # noqa: BLE001
+            print(f"[lark] compare card render/send failed, fallback to text: {e}")
+        text = res.analysis or str(res)
         self._reply(msg, text)
 
     def _reply(self, msg, text: str) -> None:

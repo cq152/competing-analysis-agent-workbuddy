@@ -35,9 +35,11 @@ class AnalysisResult(BaseModel):
 
 
 class CompareResult(BaseModel):
-    """竞品对比结果（预留，v3 暂未启用）。"""
+    """竞品对比结果（W3.2 启用）。"""
 
     targets: list[str] = Field(default_factory=list)
+    analysis: str = ""                     # 对比叙事正文
     matrix: dict = Field(default_factory=dict)       # 维度 → {竞品: 值}
     insights: list[str] = Field(default_factory=list)
     sources: list[Source] = Field(default_factory=list)
+    note: str = ""                         # 优雅降级备注（如「未能获取实时数据，待核实」）

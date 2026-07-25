@@ -11,12 +11,14 @@ v3 轻改造（09 附录C Task 2.7）：在保留 W1 已验证的「prompt 加�
 from __future__ import annotations
 
 import asyncio
+import json
+import re
 from pathlib import Path
 
 from openai import OpenAI
 
 from .config import settings
-from .models import AnalysisResult, Source
+from .models import AnalysisResult, CompareResult, Source
 
 # validation/prompts 相对本文件的路径：backend/app/engine.py -> ../../../validation/prompts
 PROMPTS_DIR = Path(__file__).resolve().parent.parent.parent / "validation" / "prompts"
@@ -137,5 +139,80 @@ def analyze(scene: str, query: str, target: str | None = None) -> AnalysisResult
         sources=sources,
         confidence="medium",
         coverage_summary=coverage,
+        note=note,
+    )
+
+
+# 从 LLM 输出中提取 ```json ... ``` 围栏块（容错：没有则返回 None）
+_JSON_BLOCK_RE = re.compile(r"```json\s*(.*?)\s*```", re.DOTALL)
+
+
+def _extract_json_block(text: str) -> str | None:
+    m = _JSON_BLOCK_RE.search(text or "")
+    return m.group(1) if m else None
+
+
+def compare(targets: list[str], query: str = "") -> CompareResult:
+    """多竞品横向对比（W3.2）。
+
+    合并 targets 做通用搜索取上下文，用 compare.txt 场景指令调 LLM，
+    解析其输出的 JSON 块为结构化 CompareResult（targets/analysis/matrix/insights/sources/note）。
+    """
+    targets = [t.strip() for t in (targets or []) if t.strip()]
+    if len(targets) < 2:
+        raise ValueError("compare 至少需要 2 个竞品")
+
+    system_prompt = _read("system.txt")
+    scene_prompt = _read("compare.txt")
+
+    combined_query = query or " vs ".join(targets)
+    sources, context = _gather_context("compare", combined_query)
+
+    note = ""
+    if context.startswith("⚠️"):
+        note = context
+        user_content = combined_query
+    else:
+        user_content = (
+            f"请对比以下竞品：{', '.join(targets)}\n\n"
+            f"{context}\n\n"
+            "（请基于以上参考资料分析，并标注信息来源；无法验证的信息明确标注「待核实」。）"
+        )
+
+    client = OpenAI(api_key=settings.api_key, base_url=settings.base_url)
+    messages = [
+        {"role": "system", "content": system_prompt + "\n\n# 当前场景指令\n" + scene_prompt},
+        {"role": "user", "content": user_content},
+    ]
+    raw = ""
+    for _ in range(2):  # 偶发空 completion 时重试一次
+        resp = client.chat.completions.create(
+            model=settings.model,
+            temperature=0.4,
+            messages=messages,
+        )
+        raw = resp.choices[0].message.content or ""
+        if raw.strip():
+            break
+
+    narrative, matrix, insights = "", {}, []
+    json_str = _extract_json_block(raw)
+    if json_str:
+        try:
+            data = json.loads(json_str)
+            narrative = data.get("narrative", "")
+            matrix = data.get("matrix", {}) or {}
+            insights = data.get("insights", []) or []
+        except Exception:  # noqa: BLE001
+            narrative = raw  # JSON 解析失败则整段作为叙事兜底
+    else:
+        narrative = raw
+
+    return CompareResult(
+        targets=targets,
+        analysis=narrative,
+        matrix=matrix,
+        insights=insights,
+        sources=sources,
         note=note,
     )
