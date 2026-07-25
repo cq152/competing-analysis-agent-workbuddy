@@ -25,3 +25,8 @@
 "FS-02","集成级","飞书定时","配置周一 9:00 定时周报，等待自动触发","到点自动发周报（set-and-forget），无需人工","Weekly 定时","是","P1","","待测",""
 "FS-03","集成级","飞书文档","分析后说「存为飞书文档」","生成文档并回链到群","飞书云文档 MCP","是","P2","","待测",""
 "FS-04","集成级","飞书无感","无感发布模式下对话调教人设","人设可边用边调，即时生效","集成","是","P2","","待测",""
+"W2-IMP","代码层","集成","所有 backend 模块 + webhook_server 加载","无 ImportError；routes 含 /webhook/event /api/analyze /health","无","是","P1","全绿：models/chinese_sources/engine/searcher/fetcher/monitor/detector/webhook_server import OK，routes 齐全","PASS ✅","2026-07-25 本地冒烟（commit 017b164 后）"
+"W2-E2E","代码层","引擎","analyze(discovery) 端到端 + 真实 DDG 搜索","返回 AnalysisResult 且 sources≥1、analysis 非空","G2 标来源 / G1 不编造","是","P1","1778字 + 3 sources（DDG 真实返回），coverage 标注「通用搜索 3」","PASS ✅","2026-07-25 本地冒烟"
+"W2-RED","对抗级","引擎","pricing 场景 analyze 红线回归","主动标「待核实」、零编造数字","G1 不编造","是（必测·2.7 回归）","P0","模型主动标注「参考资料无定价信息、价格待核实」","PASS ✅","2026-07-25 本地冒烟"
+"W2-RBAC","代码层","引擎","analyze('nope','q') 异常路由","抛 ValueError 拦截非法场景","无","是","P2","正确拦截非法场景名","PASS ✅","2026-07-25 本地冒烟"
+"W2-CLN","代码层","清理","删除 main/feishu/sessions 后 webhook_server import","正常 import、routes 不变","无","是","P2","删除后 import OK，routes 不变","PASS ✅","2026-07-25 本地冒烟"
