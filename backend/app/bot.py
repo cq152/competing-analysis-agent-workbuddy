@@ -145,15 +145,23 @@ class LarkBot:
         # "@_user_ou_xxxx" 完整 token，最稳），再兜底正则（<at> 标签 + @_user_<任意非空白>）。
         # 注：飞书真实 open_id 形如 ou_xxxx（含字母），旧正则 @_user_\d+ 只认数字会漏剥，
         # 导致命令（/monitor、/weekly 等）被误判为默认 battle_card —— 已修复。
+        # 注 2：webhook 传来的 mentions 是 dict 而非 SimpleNamespace，getattr 对 dict
+        # 会返回 None，导致 key 永远提不到 —— 须同时兼容 dict 和 namespace。
         for m in (getattr(msg, "mentions", None) or []):
-            key = getattr(m, "key", None)
+            key = None
+            if isinstance(m, dict):
+                key = m.get("key")
+            else:
+                key = getattr(m, "key", None)
             if key:
                 raw_text = raw_text.replace(key, "")
         clean = re.sub(r"@_user_[^\s@]+", "", raw_text)
         clean = re.sub(r"<at[^>]*>.*?</at>", "", clean, flags=re.DOTALL)
         # 兜底：飞书新版自定义机器人 @ 格式可能直接是 "@机器人名" 而非 "@_user_xxx"
-        # （mentions 数组可能为空或 key 不匹配），去掉行首 "@xxx " 前缀避免命令路由失效
+        # （mentions 数组可能为空或 key 不匹配），去掉行首 "@xxx" 前缀避免命令路由失效。
+        # 先试带空格的 "@机器人名 " → 再试无空格的 "@机器人名"（如 "@机器人帮助"）
         clean = re.sub(r"^@[^\s]+[\s　]+", "", clean)
+        clean = re.sub(r"^@[^\s]+", "", clean)
         clean = clean.strip()
         if not clean or clean in ("/help", "帮助", "help", "?"):
             self._reply(msg, HELP_TEXT)
