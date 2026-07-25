@@ -18,6 +18,7 @@ v3 修正（来源分色）：
 content 即本模块返回的 dict 经 json.dumps 后的字符串（不含外层 msg_type）。
 """
 
+import json
 from datetime import datetime
 from typing import Optional
 
@@ -110,6 +111,9 @@ def render_analysis_card(res: AnalysisResult) -> dict:
         }
     )
 
+    # 5) 操作按钮（P1）：再分析 / 监控此竞品
+    elements.append(_action_buttons(res.scene, res.query))
+
     return {
         "config": {"wide_screen_mode": True},
         "header": {
@@ -176,6 +180,11 @@ def render_compare_card(res: CompareResult) -> dict:
     if res.note:
         elements.append({"tag": "markdown", "content": f"⚠️ {res.note}"})
 
+    # 6) 操作按钮（P1）：再对比 / 监控
+    targets = res.targets or []
+    compare_query = " vs ".join(targets) if targets else ""
+    elements.append(_action_buttons("compare", compare_query, competitors=targets))
+
     return {
         "config": {"wide_screen_mode": True},
         "header": {
@@ -184,6 +193,54 @@ def render_compare_card(res: CompareResult) -> dict:
         },
         "elements": elements,
     }
+
+
+def _action_buttons(scene: str, query: str, competitors: list[str] | None = None) -> dict:
+    """生成卡片底部操作按钮（P1）：再分析 / 监控竞品。
+
+    Feishu callback button value 必须为字符串，用 JSON 编码传递 cmd+参数。
+    card.action.trigger 事件到达 webhook 后解析并路由到 bot.handle_card_action。
+    """
+    actions = [
+        {
+            "tag": "button",
+            "text": {"tag": "plain_text", "content": "🔄 再分析一次"},
+            "type": "primary",
+            "value": json.dumps({"cmd": "re_analyze", "scene": scene, "query": query}),
+        }
+    ]
+    # 监控按钮：对比卡片给每个竞品一个按钮，分析卡片给单个按钮
+    comps = competitors or [_extract_main_competitor(query)] if query else []
+    comps = [c for c in comps if c]
+    if len(comps) <= 2:
+        for c in comps:
+            actions.append({
+                "tag": "button",
+                "text": {"tag": "plain_text", "content": f"📡 监控 {c}"},
+                "type": "default",
+                "value": json.dumps({"cmd": "quick_monitor", "competitor": c}),
+            })
+    else:
+        actions.append({
+            "tag": "button",
+            "text": {"tag": "plain_text", "content": "📡 一键监控"},
+            "type": "default",
+            "value": json.dumps({"cmd": "quick_monitor", "competitor": comps[0]}),
+        })
+    # 换场景按钮
+    actions.append({
+        "tag": "button",
+        "text": {"tag": "plain_text", "content": "📊 切换为周报"},
+        "type": "default",
+        "value": json.dumps({"cmd": "re_analyze", "scene": "weekly", "query": query}),
+    })
+    return {"tag": "action", "actions": actions}
+
+
+def _extract_main_competitor(query: str) -> str:
+    """从 query 中提取主要竞品名（取第一个非空词）。"""
+    words = query.strip().split()
+    return words[0] if words else ""
 
 
 def render_help_card(bot_name: str = "竞品分析搭档", scenes: list[str] | None = None) -> dict:

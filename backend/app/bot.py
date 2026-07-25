@@ -308,6 +308,63 @@ class LarkBot:
             print(f"[lark] help card failed, fallback to text: {e}")
         self._reply(msg, HELP_TEXT)
 
+    def handle_card_action(self, chat_id: str, value: dict) -> None:
+        """处理卡片按钮回调（P1）。由 webhook_server 的 card.action.trigger 路由调用。
+
+        value 来自按钮 JSON value 字段（已由 webhook 反序列化为 dict）。
+        支持命令：re_analyze（重新分析）、quick_monitor（快速添加监控）。
+        """
+        cmd = value.get("cmd", "")
+        if cmd == "re_analyze":
+            scene = value.get("scene", DEFAULT_SCENE)
+            query = value.get("query", "")
+            if not query:
+                self.push(chat_id, "⚠️ 按钮信息不完整，请直接发消息给我。")
+                return
+            self.push(chat_id, f"🔍 {scene} 重新分析中…")
+            threading.Thread(
+                target=self._async_card_re_analyze, args=(chat_id, scene, query), daemon=True
+            ).start()
+        elif cmd == "quick_monitor":
+            competitor = value.get("competitor", "")
+            if not competitor:
+                self.push(chat_id, "⚠️ 按钮信息不完整，请直接发「监控 <竞品>」给我。")
+                return
+            try:
+                from app.monitor import get_monitor_service
+
+                svc = get_monitor_service(self)
+                rowid, created = svc.store.add(chat_id, competitor)
+                if created:
+                    self.push(chat_id, f"📡 已添加监控：{competitor}（有变化自动推群）")
+                else:
+                    self.push(chat_id, f"📡 {competitor} 已在监控中，无需重复添加。")
+            except Exception as e:  # noqa: BLE001
+                print(f"[lark] quick_monitor failed: {e}")
+                self.push(chat_id, f"⚠️ 添加监控失败：{e}")
+
+    def _async_card_re_analyze(self, chat_id: str, scene: str, query: str) -> None:
+        """异步重新分析并推送卡片（卡片按钮「再分析一次」专用）。"""
+        try:
+            from app.card_renderer import render_card
+
+            res = analyze(scene, query)
+            # 存历史
+            try:
+                get_session_store().save_analysis(
+                    chat_id, scene, query, (res.analysis or "")[:200]
+                )
+            except Exception as e:  # noqa: BLE001
+                print(f"[lark] card re-analyze save history failed: {e}")
+            # 推卡片
+            card = render_card(res)
+            if card and self.push_card(chat_id, card):
+                return
+            # 回退文本
+            self.push(chat_id, res.analysis or str(res))
+        except Exception as e:  # noqa: BLE001
+            self.push(chat_id, f"⚠️ 重新分析失败：{e}")
+
     def push(self, chat_id: str, text: str) -> bool:
         """主动向指定群推送消息（监控雷达用）。返回是否发送成功。"""
         content = json.dumps({"text": text}, ensure_ascii=False)

@@ -34,6 +34,7 @@ import hashlib
 import hmac
 import json
 import os
+import threading
 import time as _time
 import types
 from contextlib import asynccontextmanager
@@ -213,18 +214,35 @@ async def feishu_event(request: Request):
     if not _verify_signature(request.headers, body_str):
         return JSONResponse({"code": 19021, "msg": "invalid signature"}, status_code=401)
 
-    # 3) 仅处理消息接收事件，其余（进群等）忽略
+    # 3) 事件路由：消息接收 or 卡片按钮回调
     event_type = (body.get("header") or {}).get("event_type")
-    if event_type != "im.message.receive_v1":
+    if event_type == "im.message.receive_v1":
+        # 4a) 消息事件：交给复用自 bot.py 的处理逻辑
+        try:
+            bot.handle_message(_to_event(body))
+        except Exception as e:  # noqa: BLE001
+            print(f"[webhook] handle failed: {e}")
+            return JSONResponse({"code": 1, "msg": str(e)}, status_code=200)
+        return JSONResponse({"code": 0, "msg": "success"})
+    elif event_type == "card.action.trigger":
+        # 4b) 卡片按钮回调（P1）：提取 value + chat_id，异步执行避免飞书 3s 超时
+        try:
+            action = (body.get("event") or {}).get("action") or {}
+            value_str = action.get("value", "{}")
+            chat_id = ((body.get("event") or {}).get("context") or {}).get("open_chat_id", "")
+            if not chat_id:
+                return JSONResponse({"code": 0, "msg": "card action without chat_id, skip"})
+            value = json.loads(value_str) if isinstance(value_str, str) else value_str
+            threading.Thread(
+                target=bot.handle_card_action, args=(chat_id, value), daemon=True
+            ).start()
+        except Exception as e:  # noqa: BLE001
+            print(f"[webhook] card action failed: {e}")
+        # 飞书卡片回调要求 3s 内返回，已异步处理
+        return JSONResponse({"code": 0, "msg": "success"})
+    else:
+        # 其余事件（进群等）忽略
         return JSONResponse({"code": 0, "msg": f"ignored {event_type}"})
-
-    # 4) 交给复用自 bot.py 的处理逻辑（含场景路由、群白名单、回复）
-    try:
-        bot.handle_message(_to_event(body))
-    except Exception as e:  # noqa: BLE001
-        print(f"[webhook] handle failed: {e}")
-        return JSONResponse({"code": 1, "msg": str(e)}, status_code=200)
-    return JSONResponse({"code": 0, "msg": "success"})
 
 
 @app.get("/healthz")
