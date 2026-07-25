@@ -34,12 +34,14 @@ import hashlib
 import hmac
 import json
 import os
+import time as _time
 import types
 from contextlib import asynccontextmanager
 from pathlib import Path
 
 from dotenv import load_dotenv
 from fastapi import FastAPI, Request
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
@@ -86,9 +88,58 @@ async def _scheduler_loop(svc) -> None:
         await asyncio.sleep(settings.monitor_interval_minutes * 60)
 
 
-app = FastAPI(title="竞品分析搭档", version="0.2.0", lifespan=lifespan)
+app = FastAPI(title="竞品分析搭档", version="0.3.0", lifespan=lifespan)
 # 复用 bot.py 的分析引擎与回复逻辑（含单实例锁之外的全部能力）
 bot = LarkBot()
+
+# ===== 3.4 webhook 加固 =====
+
+# ① CORS：允许外部系统调用 /api/analyze
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=False,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# ② 日志中间件：记录每个请求 method/path/status/耗时
+@app.middleware("http")
+async def log_middleware(request: Request, call_next):
+    start = _time.monotonic()
+    response = await call_next(request)
+    elapsed_ms = int((_time.monotonic() - start) * 1000)
+    log.info(f"{request.method} {request.url.path} → {response.status_code} ({elapsed_ms}ms)")
+    return response
+
+# ③ 内存令牌桶限流（开发期宽松：30 req/min，只限制 POST /webhook/event 和 /api/analyze）
+_rate_window: dict[str, list[float]] = {}
+
+
+@app.middleware("http")
+async def rate_limit_middleware(request: Request, call_next):
+    if request.method != "POST":
+        return await call_next(request)
+    path = request.url.path
+    if path not in ("/webhook/event", "/api/analyze"):
+        return await call_next(request)
+    ip = request.client.host if request.client else "unknown"
+    key = f"{ip}:{path}"
+    now = _time.monotonic()
+    _rate_window.setdefault(key, [])
+    _rate_window[key] = [t for t in _rate_window[key] if now - t < 60]
+    max_rate = int(os.getenv("RATE_LIMIT_PER_MIN", "30"))
+    if len(_rate_window[key]) >= max_rate:
+        log.warning(f"限流触发: {key} {len(_rate_window[key])} req/min")
+        return JSONResponse({"code": 429, "msg": "too many requests"}, status_code=429)
+    _rate_window[key].append(now)
+    return await call_next(request)
+
+# ④ 统一异常处理：未捕获异常返回 500 JSON（不泄露堆栈）
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    log.error(f"未处理异常 {request.method} {request.url.path}: {exc}")
+    return JSONResponse({"code": 1, "msg": "internal error"}, status_code=500)
 
 
 class AnalyzeReq(BaseModel):
@@ -192,6 +243,7 @@ def api_analyze(req: AnalyzeReq):
     """外部系统可调用的分析 API，复用验证通过的提示词引擎。
 
     v3：引擎返回结构化 AnalysisResult，直接序列化返回（analysis/sources/coverage 等）。
+    3.4：统一异常由全局 handler 兜底返回 500 JSON。
     """
     res = engine_analyze(req.scene, req.query)
     if hasattr(res, "model_dump"):

@@ -301,8 +301,11 @@ class LarkBot:
             if not competitor:
                 self._reply(msg, "请指定竞品名，如 /monitor add 飞书")
                 return
-            mid = svc.store.add(competitor, msg.chat_id)
-            self._reply(msg, f"✅ 已加入监控 #{mid}：{competitor}（定时搜索，有变化推群）")
+            mid, created = svc.store.add(competitor, msg.chat_id)
+            if created:
+                self._reply(msg, f"✅ 已加入监控 #{mid}：{competitor}（定时搜索，有变化推群）")
+            else:
+                self._reply(msg, f"⚠️ 本群已监控「{competitor}」（#{mid}），无需重复添加")
         elif sub == "list":
             items = svc.store.list(msg.chat_id)
             if not items:

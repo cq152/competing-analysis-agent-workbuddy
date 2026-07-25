@@ -34,6 +34,7 @@ class Monitor:
     created_at: str
     last_check_at: Optional[str] = None
     last_signature: str = ""
+    last_push_at: Optional[str] = None  # 3.4 频率上限：上次推群时间
 
 
 class MonitorStore:
@@ -44,7 +45,10 @@ class MonitorStore:
         Path(db_path).parent.mkdir(parents=True, exist_ok=True)
         self._conn = sqlite3.connect(db_path, check_same_thread=False)
         self._conn.row_factory = sqlite3.Row
-        self._init_schema()
+        self._init_schema()                 # 建表（不建唯一索引）
+        self._migrate_add_last_push_at()    # 3.4 迁移列
+        self.dedupe_existing()              # 3.4 先去重（老 db 可能有重复）
+        self._add_unique_index()            # 3.4 再建唯一索引（去重后安全）
 
     def _init_schema(self) -> None:
         self._conn.execute(
@@ -56,19 +60,74 @@ class MonitorStore:
                 chat_id TEXT NOT NULL,
                 created_at TEXT NOT NULL,
                 last_check_at TEXT,
-                last_signature TEXT DEFAULT ''
+                last_signature TEXT DEFAULT '',
+                last_push_at TEXT
             )
             """
         )
         self._conn.commit()
 
-    def add(self, competitor: str, chat_id: str, scene: str = "discovery") -> int:
+    def _add_unique_index(self) -> None:
+        """3.4 去重：唯一索引 (chat_id, competitor)，同群同竞品不可重复。
+        独立方法，在 dedupe_existing 之后调用，避免老 db 重复数据冲突。"""
+        self._conn.execute(
+            "CREATE UNIQUE INDEX IF NOT EXISTS idx_monitors_chat_comp "
+            "ON monitors(chat_id, competitor)"
+        )
+        self._conn.commit()
+
+    def _migrate_add_last_push_at(self) -> None:
+        """3.4 迁移：旧表可能无 last_push_at 列，启动时补。"""
+        cols = {r[1] for r in self._conn.execute("PRAGMA table_info(monitors)")}
+        if "last_push_at" not in cols:
+            self._conn.execute("ALTER TABLE monitors ADD COLUMN last_push_at TEXT")
+            self._conn.commit()
+
+    def dedupe_existing(self) -> int:
+        """3.4 启动清理：同 (chat_id, competitor) 保留最早一条，删除其余。
+
+        返回删除条数。迁移老 db（3.4 前无唯一索引，可能已存重复项）。
+        注意：唯一索引已在 _init_schema 建好，但老 db 可能先有重复再建索引——
+        这里扫描时使用子查询绕过唯一索引限制（不依赖唯一索引去重，直接 SQL 删）。
+        """
+        # 找所有重复组中要保留的 id（最早一条）
+        rows = self._conn.execute(
+            "SELECT chat_id, competitor, MIN(id) AS keep_id "
+            "FROM monitors GROUP BY chat_id, competitor HAVING COUNT(*) > 1"
+        ).fetchall()
+        if not rows:
+            return 0
+        deleted = 0
+        for r in rows:
+            # 删掉非最早的同群同竞品记录
+            cur = self._conn.execute(
+                "DELETE FROM monitors WHERE chat_id=? AND competitor=? AND id != ?",
+                (r["chat_id"], r["competitor"], r["keep_id"]),
+            )
+            deleted += cur.rowcount
+        if deleted:
+            self._conn.commit()
+            log.info(f"监控去重清理：删除 {deleted} 条重复项")
+        return deleted
+
+    def add(self, competitor: str, chat_id: str, scene: str = "discovery") -> tuple[int, bool]:
+        """添加监控项。3.4 去重：同 (chat_id, competitor) 已存在则返回已有 ID + created=False。
+
+        Returns:
+            (id, created) —— created=False 表示已存在未新增。
+        """
+        existing = self._conn.execute(
+            "SELECT id FROM monitors WHERE chat_id=? AND competitor=?",
+            (chat_id, competitor),
+        ).fetchone()
+        if existing:
+            return existing["id"], False
         cur = self._conn.execute(
             "INSERT INTO monitors (competitor, scene, chat_id, created_at) VALUES (?,?,?,?)",
             (competitor, scene, chat_id, _now()),
         )
         self._conn.commit()
-        return cur.lastrowid
+        return cur.lastrowid, True
 
     def list(self, chat_id: str) -> list[dict]:
         rows = self._conn.execute(
@@ -80,7 +139,7 @@ class MonitorStore:
 
     def get_all(self) -> list[Monitor]:
         rows = self._conn.execute(
-            "SELECT id, competitor, scene, chat_id, created_at, last_check_at, last_signature "
+            "SELECT id, competitor, scene, chat_id, created_at, last_check_at, last_signature, last_push_at "
             "FROM monitors"
         ).fetchall()
         return [Monitor(**dict(r)) for r in rows]
@@ -99,6 +158,13 @@ class MonitorStore:
         )
         self._conn.commit()
 
+    def update_push(self, mid: int) -> None:
+        """3.4 频率上限：记录推送时间。"""
+        self._conn.execute(
+            "UPDATE monitors SET last_push_at=? WHERE id=?", (_now(), mid)
+        )
+        self._conn.commit()
+
 
 class MonitorService:
     """监控业务逻辑：定时检查 + 变化推群。"""
@@ -110,7 +176,12 @@ class MonitorService:
         self.bot = bot
 
     async def check_one(self, m: Monitor) -> bool:
-        """对单个监控项执行一次检查。有变化则推群，返回是否有变化。"""
+        """对单个监控项执行一次检查。有变化则推群，返回是否有变化。
+
+        3.4 体验修复：
+        - 首次静默期：last_signature 为空时只写 baseline，不推群（避免新监控项立即灌一条"全部新增"）。
+        - 频率上限：距上次推送 < 24h 则跳过（记 log，不推）。
+        """
         from app.detector import detect_changes
 
         # Searcher.search 是同步网络调用，用 to_thread 避免阻塞事件循环
@@ -119,18 +190,39 @@ class MonitorService:
         )
         items = [f"{r.title} ({r.domain})" for r in results]
         old_items = _deserialize(m.last_signature)
-        changes = detect_changes(old_items, items)
 
-        if changes.has_change:
-            msg = self._format_change(m.competitor, changes)
-            self.bot.push(m.chat_id, msg)
+        # ① 首次静默期：空 baseline 只记录，不推
+        if not old_items and not m.last_signature:
             self.store.update_check(m.id, _serialize(items))
-            log.info(f"监控告警已推送: {m.competitor} (chat={m.chat_id})")
-            return True
+            log.info(f"监控首次检查(静默期): {m.competitor} baseline 已记录，不推群")
+            return False
 
-        # 无变化也更新 last_check_at，保持活跃
-        self.store.update_check(m.id, m.last_signature)
-        return False
+        changes = detect_changes(old_items, items)
+        if not changes.has_change:
+            # 无变化也更新 last_check_at，保持活跃
+            self.store.update_check(m.id, m.last_signature)
+            return False
+
+        # ② 频率上限：距上次推送 < 24h 则跳过
+        if m.last_push_at:
+            try:
+                last = datetime.fromisoformat(m.last_push_at)
+                elapsed_hours = (datetime.now(timezone.utc) - last).total_seconds() / 3600
+                if elapsed_hours < 24:
+                    log.info(
+                        f"监控频率限制: {m.competitor} 距上次推送 {elapsed_hours:.1f}h < 24h，跳过"
+                    )
+                    self.store.update_check(m.id, _serialize(items))
+                    return False
+            except (ValueError, TypeError):
+                pass  # 时间解析失败则正常推送
+
+        msg = self._format_change(m.competitor, changes)
+        self.bot.push(m.chat_id, msg)
+        self.store.update_push(m.id)
+        self.store.update_check(m.id, _serialize(items))
+        log.info(f"监控告警已推送: {m.competitor} (chat={m.chat_id})")
+        return True
 
     @staticmethod
     def _format_change(competitor: str, changes) -> str:
