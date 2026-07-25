@@ -217,11 +217,19 @@ async def feishu_event(request: Request):
     # 3) 事件路由：消息接收 or 卡片按钮回调
     event_type = (body.get("header") or {}).get("event_type")
     if event_type == "im.message.receive_v1":
-        # 4a) 消息事件：交给复用自 bot.py 的处理逻辑
+        # 4a) 消息事件：异步执行避免飞书 3s 超时（LLM 调用需 5-15s）
+        event = _to_event(body)
+        def _safe_handle():
+            try:
+                bot.handle_message(event)
+            except Exception as e:  # noqa: BLE001
+                import traceback
+                print(f"[webhook] handle_message CRASHED: {e}")
+                traceback.print_exc()
         try:
-            bot.handle_message(_to_event(body))
+            threading.Thread(target=_safe_handle, daemon=True).start()
         except Exception as e:  # noqa: BLE001
-            print(f"[webhook] handle failed: {e}")
+            print(f"[webhook] thread start failed: {e}")
             return JSONResponse({"code": 1, "msg": str(e)}, status_code=200)
         return JSONResponse({"code": 0, "msg": "success"})
     elif event_type == "card.action.trigger":

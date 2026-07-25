@@ -225,15 +225,18 @@ class MonitorService:
             except (ValueError, TypeError):
                 pass  # 时间解析失败则正常推送
 
-        # P1：推卡片（取代纯文本）
-        self._push_alert_card(m.competitor, m.chat_id, changes)
+        # P1：推卡片（取代纯文本）；检查返回值避免日志误报
+        push_ok = self._push_alert_card(m.competitor, m.chat_id, changes)
         self.store.update_push(m.id)
         self.store.update_check(m.id, _serialize(items))
-        log.info(f"监控告警已推送: {m.competitor} (chat={m.chat_id})")
+        if push_ok:
+            log.info(f"监控告警已推送: {m.competitor} (chat={m.chat_id})")
+        else:
+            log.warning(f"监控告警推送失败: {m.competitor} (chat={m.chat_id})")
         return True
 
-    def _push_alert_card(self, competitor: str, chat_id: str, changes) -> None:
-        """P1：用飞书卡片推送监控告警（取代纯文本 _format_change）。"""
+    def _push_alert_card(self, competitor: str, chat_id: str, changes) -> bool:
+        """P1：用飞书卡片推送监控告警（取代纯文本 _format_change）。返回是否成功。"""
         from app.card_renderer import render_monitor_alert_card
 
         card = render_monitor_alert_card(
@@ -243,7 +246,8 @@ class MonitorService:
         if not ok:
             # 卡片推送失败回退纯文本（不应常见，但兜底）
             fallback = self._format_change_text(competitor, changes)
-            self.bot.push(chat_id, fallback)
+            ok = self.bot.push(chat_id, fallback)
+        return ok
 
     @staticmethod
     def _format_change_text(competitor: str, changes) -> str:

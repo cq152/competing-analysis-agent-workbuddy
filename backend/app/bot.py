@@ -137,6 +137,7 @@ class LarkBot:
                 self._reply(msg, "本群未在白名单内，请联系管理员配置 allowed_chats。")
             return
         if msg.message_type != "text":
+            print(f"[lark] non-text message: type={msg.message_type}")
             self._push_tip(msg.chat_id, "⚠️ 暂不支持", f"目前只支持**文本消息**。\n\n请直接输入竞品分析问题，例如：\n`客户总拿飞书压我们，怎么应对？`", "orange")
             return
         content = json.loads(msg.content)
@@ -163,6 +164,7 @@ class LarkBot:
         clean = re.sub(r"^@[^\s]+[\s　]+", "", clean)
         clean = re.sub(r"^@[^\s]+", "", clean)
         clean = clean.strip()
+        print(f"[lark] clean={clean!r}")
         # W3.5：首次@欢迎（chat_id 维度，每群只推一次），不阻塞当前命令
         self._maybe_onboard(msg)
         # 空 @mention 或显式"帮助" → 推使用指南卡片（用户期望：@了不说话也给引导）
