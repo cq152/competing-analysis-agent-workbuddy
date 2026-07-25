@@ -243,6 +243,65 @@ def _extract_main_competitor(query: str) -> str:
     return words[0] if words else ""
 
 
+def render_monitor_alert_card(competitor: str, added: list[str], removed: list[str]) -> dict:
+    """渲染竞品雷达告警卡片（P1：取代纯文本推送）。
+
+    橙色 header + 变更明细 + 时间，比纯文本更醒目易读。
+    """
+    ts = datetime.now().strftime("%Y-%m-%d %H:%M")
+    elements: list[dict] = []
+
+    # 简介行
+    total_changes = len(added) + len(removed)
+    elements.append(
+        {"tag": "markdown", "content": f"**{competitor}** 检测到 {total_changes} 项变化，于 {ts}"}
+    )
+    elements.append({"tag": "hr"})
+
+    # 新增
+    if added:
+        lines = ["**➕ 新增**"] + [f"{i}. {x[:100]}" for i, x in enumerate(added[:5], 1)]
+        elements.append({"tag": "markdown", "content": "\n".join(lines)})
+
+    # 消失
+    if removed:
+        lines = ["**➖ 消失**"] + [f"{i}. {x[:100]}" for i, x in enumerate(removed[:5], 1)]
+        elements.append({"tag": "markdown", "content": "\n".join(lines)})
+
+    elements.append({"tag": "hr"})
+    elements.append(
+        {"tag": "markdown", "content": "_基于公开网络搜索，建议进一步核实_"}
+    )
+
+    # 操作按钮
+    elements.append({
+        "tag": "action",
+        "actions": [
+            {
+                "tag": "button",
+                "text": {"tag": "plain_text", "content": "🔍 查看详情"},
+                "type": "primary",
+                "value": json.dumps({"cmd": "re_analyze", "scene": "discovery", "query": competitor}),
+            },
+            {
+                "tag": "button",
+                "text": {"tag": "plain_text", "content": "🗑 删除监控"},
+                "type": "default",
+                "value": json.dumps({"cmd": "quick_unmonitor", "competitor": competitor}),
+            },
+        ],
+    })
+
+    return {
+        "config": {"wide_screen_mode": True},
+        "header": {
+            "title": {"tag": "plain_text", "content": f"📡 竞品雷达｜{competitor}"},
+            "template": "orange",
+        },
+        "elements": elements,
+    }
+
+
 def render_help_card(bot_name: str = "竞品分析搭档", scenes: list[str] | None = None) -> dict:
     """渲染帮助卡片：分「我能做什么 / 命令示例 / 使用说明」三栏，视觉分层。
 

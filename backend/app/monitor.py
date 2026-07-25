@@ -151,6 +151,14 @@ class MonitorStore:
         self._conn.commit()
         return cur.rowcount > 0
 
+    def remove_by_competitor(self, chat_id: str, competitor: str) -> bool:
+        """P1：按竞品名删除监控项（供卡片按钮 quick_unmonitor 使用）。"""
+        cur = self._conn.execute(
+            "DELETE FROM monitors WHERE chat_id=? AND competitor=?", (chat_id, competitor)
+        )
+        self._conn.commit()
+        return cur.rowcount > 0
+
     def update_check(self, mid: int, signature: str) -> None:
         self._conn.execute(
             "UPDATE monitors SET last_check_at=?, last_signature=? WHERE id=?",
@@ -217,15 +225,29 @@ class MonitorService:
             except (ValueError, TypeError):
                 pass  # 时间解析失败则正常推送
 
-        msg = self._format_change(m.competitor, changes)
-        self.bot.push(m.chat_id, msg)
+        # P1：推卡片（取代纯文本）
+        self._push_alert_card(m.competitor, m.chat_id, changes)
         self.store.update_push(m.id)
         self.store.update_check(m.id, _serialize(items))
         log.info(f"监控告警已推送: {m.competitor} (chat={m.chat_id})")
         return True
 
+    def _push_alert_card(self, competitor: str, chat_id: str, changes) -> None:
+        """P1：用飞书卡片推送监控告警（取代纯文本 _format_change）。"""
+        from app.card_renderer import render_monitor_alert_card
+
+        card = render_monitor_alert_card(
+            competitor, changes.added or [], changes.removed or []
+        )
+        ok = self.bot.push_card(chat_id, card)
+        if not ok:
+            # 卡片推送失败回退纯文本（不应常见，但兜底）
+            fallback = self._format_change_text(competitor, changes)
+            self.bot.push(chat_id, fallback)
+
     @staticmethod
-    def _format_change(competitor: str, changes) -> str:
+    def _format_change_text(competitor: str, changes) -> str:
+        """卡片失败时的纯文本兜底（保留原 _format_change 逻辑）。"""
         lines = [f"📡 竞品雷达：{competitor} 有变化"]
         if changes.added:
             lines.append("➕ 新增：")

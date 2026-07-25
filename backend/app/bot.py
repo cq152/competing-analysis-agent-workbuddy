@@ -342,6 +342,23 @@ class LarkBot:
             except Exception as e:  # noqa: BLE001
                 print(f"[lark] quick_monitor failed: {e}")
                 self.push(chat_id, f"⚠️ 添加监控失败：{e}")
+        elif cmd == "quick_unmonitor":
+            competitor = value.get("competitor", "")
+            if not competitor:
+                self.push(chat_id, "⚠️ 按钮信息不完整。")
+                return
+            try:
+                from app.monitor import get_monitor_service
+
+                svc = get_monitor_service(self)
+                ok = svc.store.remove_by_competitor(chat_id, competitor)
+                if ok:
+                    self.push(chat_id, f"🗑 已删除监控：{competitor}")
+                else:
+                    self.push(chat_id, f"⚠️ 未找到 {competitor} 的监控记录。")
+            except Exception as e:  # noqa: BLE001
+                print(f"[lark] quick_unmonitor failed: {e}")
+                self.push(chat_id, f"⚠️ 删除监控失败：{e}")
 
     def _async_card_re_analyze(self, chat_id: str, scene: str, query: str) -> None:
         """异步重新分析并推送卡片（卡片按钮「再分析一次」专用）。"""
