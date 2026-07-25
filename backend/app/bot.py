@@ -137,7 +137,7 @@ class LarkBot:
                 self._reply(msg, "本群未在白名单内，请联系管理员配置 allowed_chats。")
             return
         if msg.message_type != "text":
-            self._reply(msg, "目前只支持文本消息，请直接输入竞品分析问题。")
+            self._push_tip(msg.chat_id, "⚠️ 暂不支持", f"目前只支持**文本消息**。\n\n请直接输入竞品分析问题，例如：\n`客户总拿飞书压我们，怎么应对？`", "orange")
             return
         content = json.loads(msg.content)
         raw_text = content.get("text", "")
@@ -190,13 +190,13 @@ class LarkBot:
         threading.Thread(
             target=self._async_analyze, args=(msg, scene, query), daemon=True
         ).start()
-        self._reply(msg, "🔍 分析中，稍候…")
+        self._push_tip(msg.chat_id, "🔍 分析中", f"正在检索网络情报并生成**{scene}**分析…\n稍候片刻，结果即将送达。", "blue")
 
     def _async_analyze(self, msg, scene: str, query: str) -> None:
         try:
             res = analyze(scene, query)
         except Exception as e:  # noqa: BLE001
-            self._reply(msg, f"分析失败：{e}")
+            self._push_tip(msg.chat_id, "⚠️ 分析失败", f"错误信息：{e}\n\n请稍后重试，或换个问法。", "red")
             return
         # W3.3：分析完成后持久化历史（会话连续/回溯），摘要截取前 200 字
         try:
@@ -228,11 +228,11 @@ class LarkBot:
         rest = re.sub(r"^(对比|/compare|compare)\s*", "", text).strip()
         targets = [t for t in rest.split() if t]
         if len(targets) < 2:
-            self._reply(msg, "用法：对比 <竞品A> <竞品B> [竞品C]\n例如：对比 飞书 钉钉")
+            self._push_tip(msg.chat_id, "📖 用法提示", "对比需要至少 2 个竞品。\n\n**示例：**\n`对比 飞书 钉钉`\n`对比 飞书 钉钉 企业微信`", "orange")
             return
         self._remember_main(msg.chat_id, targets[0])
         threading.Thread(target=self._async_compare, args=(msg, targets), daemon=True).start()
-        self._reply(msg, "🔍 对比分析中，稍候…")
+        self._push_tip(msg.chat_id, "🔍 对比分析中", f"正在检索并横向对比 **{' / '.join(targets)}**…\n稍候片刻，对比卡片即将送达。", "blue")
 
     def _handle_compare_phrase(self, msg, text: str) -> None:
         """处理「和 X 对比」/「对比 X」：提取 X，补上次主竞品成双目标。"""
@@ -240,23 +240,23 @@ class LarkBot:
         cleaned = cleaned.replace("对比", "").strip()
         parts = cleaned.split()
         if not parts:
-            self._reply(msg, "用法：和 <竞品> 对比 / 对比 <竞品>（需先「对比 A B」记录主竞品）")
+            self._push_tip(msg.chat_id, "📖 用法提示", "和 <竞品> 对比 / 对比 <竞品>\n（需先「对比 A B」记录主竞品）", "orange")
             return
         other = parts[0]
         main = get_session_store().get_primary(msg.chat_id)
         if not main:
-            self._reply(msg, "还没有记录主竞品，请先用「对比 A B」指定，例如：对比 飞书 钉钉")
+            self._push_tip(msg.chat_id, "📖 用法提示", "还没有记录主竞品，请先用 `对比 A B` 指定。\n\n**示例：** `对比 飞书 钉钉`", "orange")
             return
         self._remember_main(msg.chat_id, other)
         threading.Thread(target=self._async_compare, args=(msg, [main, other]), daemon=True).start()
-        self._reply(msg, "🔍 对比分析中，稍候…")
+        self._push_tip(msg.chat_id, "🔍 对比分析中", f"正在检索并对比 **{main} / {other}**…\n稍候片刻，对比卡片即将送达。", "blue")
 
     def _async_compare(self, msg, targets: list[str]) -> None:
         """异步跑对比引擎并卡片优先推送（复用 W3.1 push_card）。"""
         try:
             res = compare(targets)
         except Exception as e:  # noqa: BLE001
-            self._reply(msg, f"对比分析失败：{e}")
+            self._push_tip(msg.chat_id, "⚠️ 对比分析失败", f"错误信息：{e}\n\n请稍后重试，或换个竞品组合。", "red")
             return
         # W3.3：对比也存历史（会话连续/回溯），摘要截取前 200 字
         try:
@@ -281,6 +281,21 @@ class LarkBot:
         # 99992402 field validation failed；改用 receive_id_type="chat_id" 发到群最稳
         # （群内以 bot 独立消息呈现，可见且不依赖消息 id 格式）。
         self.push(msg.chat_id, text)
+
+    def _push_tip(self, chat_id: str, title: str, content: str = "", template: str = "blue") -> None:
+        """P2：推送轻量提示卡片（等待/错误/成功/警告）。失败回退纯文本。"""
+        try:
+            from app.card_renderer import render_tip_card
+
+            card = render_tip_card(title, content, template)
+            if self.push_card(chat_id, card):
+                return
+        except Exception as e:  # noqa: BLE001
+            print(f"[lark] tip card failed, fallback to text: {e}")
+        text = title
+        if content:
+            text += f"\n{content}"
+        self.push(chat_id, text)
 
     def _maybe_onboard(self, msg) -> None:
         """首次@欢迎：chat_id 维度每群只推一次 onboarding 卡片，不阻塞当前命令。
@@ -437,12 +452,14 @@ class LarkBot:
         if re.match(r"^(监控列表|monitor\s+list|list)$", text):
             items = svc.store.list(msg.chat_id)
             if not items:
-                self._reply(msg, "本群暂无可监控竞品。用「监控 <竞品名>」添加。")
+                self._push_tip(msg.chat_id, "📡 监控列表", "本群暂无监控项。\n\n用 `监控 <竞品名>` 添加，例如：\n`监控 飞书`", "blue")
                 return
-            lines = ["📡 本群监控列表："]
+            lines = ["📡 本群监控列表：", ""]
             for m in items:
-                lines.append(f"  #{m['id']} {m['competitor']}（场景：{m['scene']}）")
-            self._reply(msg, "\n".join(lines))
+                lines.append(f"  **#{m['id']}** {m['competitor']}（场景：{m['scene']}）")
+            lines.append("")
+            lines.append(f"共 {len(items)} 项 · 有变化自动推群")
+            self._push_tip(msg.chat_id, "📡 监控列表", "\n".join(lines), "blue")
             return
 
         if re.match(r"^(删除监控|monitor\s+remove|remove)\s*\d+", text):
@@ -450,10 +467,13 @@ class LarkBot:
             try:
                 mid = int(mid_str)
             except ValueError:
-                self._reply(msg, "请指定要删除的监控 ID，如：删除监控 1")
+                self._push_tip(msg.chat_id, "📖 用法提示", "请指定要删除的监控 ID，如：`删除监控 1`", "orange")
                 return
             ok = svc.store.remove(mid, msg.chat_id)
-            self._reply(msg, "✅ 已删除" if ok else "⚠️ 未找到该 ID 或无权删除")
+            if ok:
+                self._push_tip(msg.chat_id, "✅ 已删除", f"监控 #{mid} 已移除。", "green")
+            else:
+                self._push_tip(msg.chat_id, "⚠️ 未找到", f"未找到监控 #{mid}，或无权删除。\n\n发 `监控列表` 查看当前监控项。", "red")
             return
 
         # 「监控 <竞品>」「monitor add <竞品>」「添加监控 <竞品>」
@@ -461,13 +481,13 @@ class LarkBot:
             r"^(监控|monitor\s+add|添加监控|添加)\s*", "", text
         ).strip()
         if not competitor:
-            self._reply(msg, "用法：\n  监控 <竞品名>（添加监控）\n  监控列表\n  删除监控 <ID>")
+            self._push_tip(msg.chat_id, "📖 用法提示", "**监控命令用法：**\n\n`监控 <竞品名>` — 添加监控\n`监控列表` — 查看监控项\n`删除监控 <ID>` — 移除监控", "orange")
             return
         mid, created = svc.store.add(competitor, msg.chat_id)
         if created:
-            self._reply(msg, f"✅ 已加入监控 #{mid}：{competitor}（定时搜索，有变化推群）")
+            self._push_tip(msg.chat_id, "✅ 监控已添加", f"**{competitor}**（#{mid}）\n\n定时搜索公开网络，有变化自动推群。", "green")
         else:
-            self._reply(msg, f"⚠️ 本群已监控「{competitor}」（#{mid}），无需重复添加")
+            self._push_tip(msg.chat_id, "📡 无需重复添加", f"**{competitor}**（#{mid}）已在监控中。", "orange")
 
 
 def do_p2_im_message_receive_v1(data: lark.im.v1.P2ImMessageReceiveV1) -> None:

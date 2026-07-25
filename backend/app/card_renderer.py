@@ -392,6 +392,34 @@ def render_onboarding_card(bot_name: str = "竞品分析搭档") -> dict:
     }
 
 
+def render_tip_card(
+    title: str,
+    content: str = "",
+    template: str = "blue",
+) -> dict:
+    """通用提示卡片（P2）：用于错误/成功/等待/警告等轻量提示。
+
+    template 配色：
+    - blue: 信息/等待（🔍 分析中…）
+    - green: 成功（✅ 已添加 / 已删除）
+    - red: 错误（⚠️ 失败 / 不支持）
+    - orange: 警告（用法提示 / 限制说明）
+    """
+    elements: list[dict] = []
+    if content:
+        elements.append({"tag": "markdown", "content": content})
+    elements.append({"tag": "hr"})
+    elements.append({"tag": "markdown", "content": "竞品分析搭档 · 即时提示"})
+    return {
+        "config": {"wide_screen_mode": True},
+        "header": {
+            "title": {"tag": "plain_text", "content": title},
+            "template": template,
+        },
+        "elements": elements,
+    }
+
+
 def render_card(obj) -> Optional[dict]:
     """统一入口：按类型分发渲染。未知类型返回 None（调用方回退文本）。"""
     if isinstance(obj, AnalysisResult):
