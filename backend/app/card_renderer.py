@@ -200,15 +200,25 @@ def _action_buttons(scene: str, query: str, competitors: list[str] | None = None
 
     Feishu callback button value 必须为字符串，用 JSON 编码传递 cmd+参数。
     card.action.trigger 事件到达 webhook 后解析并路由到 bot.handle_card_action。
+
+    注意：对比卡片的「再分析」走 re_compare（用 targets 重新调用 engine.compare），
+    不能走 re_analyze（analyze 不认 scene="compare"，会报 unknown scene）。
     """
-    actions = [
-        {
+    # 对比卡片：再分析按钮走 re_compare 专用命令，传干净 targets 列表
+    if scene == "compare":
+        actions = [{
+            "tag": "button",
+            "text": {"tag": "plain_text", "content": "🔄 再对比一次"},
+            "type": "primary",
+            "value": json.dumps({"cmd": "re_compare", "targets": competitors or []}),
+        }]
+    else:
+        actions = [{
             "tag": "button",
             "text": {"tag": "plain_text", "content": "🔄 再分析一次"},
             "type": "primary",
             "value": json.dumps({"cmd": "re_analyze", "scene": scene, "query": query}),
-        }
-    ]
+        }]
     # 监控按钮：对比卡片给每个竞品一个按钮，分析卡片给单个按钮
     comps = competitors or [_extract_main_competitor(query)] if query else []
     comps = [c for c in comps if c]

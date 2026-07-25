@@ -1,7 +1,7 @@
 # 竞品分析 Agent · 项目总览
 
 > 一个跑在**飞书群**里的「竞品雷达 + 军师」，卖给**中小企业（SMB）**。
-> 当前阶段：**W3 代码功能层全部完成（3.1~3.5 + P0/P1/P2），飞书群实测 AI 代跑 E2E 25 项全 PASS** + **卡片按钮回调（card.action.trigger）公网 ngrok 实测 4 类全 PASS**（🔄再分析/📡监控/📊周报/🔍查看详情）；✅ W2 **飞书集成已闭环**；✅ W3 **飞书集成已闭环**（消息链路 + 卡片按钮回调双验证）；W3 包含：卡片渲染 / 多竞品对比 / 会话持久化 / webhook 加固 / 监控体验修复 / 自然语言命令 / 帮助卡片化 / 首次@欢迎 / 报告卡片按钮 / 监控推送卡片化 / 提示卡片化 + 分析中等待反馈 + NL-06 主竞品覆盖 bugfix + card.action.trigger 双重 JSON 编码 bugfix；Aily 仅作参考，主通道为代码 Webhook（见 `08` + `开发记录与计划.md`）。
+> 当前阶段：**W3 代码功能层全部完成（3.1~3.5 + P0/P1/P2），飞书群实测 AI 代跑 E2E 25 项全 PASS** + **卡片按钮回调（card.action.trigger）公网 ngrok 实测 4 类全 PASS**（🔄再分析/📡监控/📊周报/🔍查看详情）；✅ W2 **飞书集成已闭环**；✅ W3 **飞书集成已闭环**（消息链路 + 卡片按钮回调双验证）；W3 包含：卡片渲染 / 多竞品对比 / 会话持久化 / webhook 加固 / 监控体验修复 / 自然语言命令 / 帮助卡片化 / 首次@欢迎 / 报告卡片按钮 / 监控推送卡片化 / 提示卡片化 + 分析中等待反馈 + NL-06 主竞品覆盖 bugfix + card.action.trigger 双重 JSON 编码 bugfix；Aily 仅作参考，主通道为代码 Webhook（见 `08` + `开发记录与计划.md`）；**W3 收尾 bugfix（2026-07-25 深夜）：对比卡片「再分析」按钮 `scene=compare` 误用导致 `unknown scene: compare` 崩溃，已修（re_compare 分支 + 旧卡片兼容分支），用户在飞书群点击「重新对比」实测验证通过。**
 > 本文件是项目的单一事实来源（single source of truth）与版本管理入口。
 
 ---
@@ -105,7 +105,7 @@
 |---|---|---|---|---|
 | **W1 调研与验证** | 市场/产品/定位/4 场景提示词/红线/风险测试/飞书接入（Aily→代码 Webhook） | **4 个 P0 飞书群实测 PASS**（PR-02/SYS-04/AD-01/AD-02），MVP Gate 闭环 | 多个（详见 `12`） | 进入 W2 正式开发 |
 | **W2 开发（v3，监控优先）** | 监控雷达（唯一硬差异化）+ 结构化分析引擎 + 优雅降级 + 中文源占位；v3 修订（G6降级/监控提前/中文源占位） | **代码层全 PASS**（端到端 DDG 3 条 + 1778 字带引用；pricing 红线 G1 合规）+ **飞书集成 PASS**（FS-01/MR-01/FS-02 经 ngrok 公网实测）；`06` 表追加 W2 PASS 行 | `af8a4a4` + `017b164` + `ffca813` + `cc7d9d8` | **飞书集成已闭环**：MR-01 监控推群 + FS-01 群聊@ + FS-02 周报 经 ngrok 公网实测 PASS（见 `06` 表） |
-| **W3 已完成** | 飞书卡片渲染 + `/compare` 对比 + 会话 SQLite 持久化 + webhook 加固 + 监控体验修复 + **自然语言命令** + **帮助卡片化 + 首次@欢迎** + **报告卡片按钮** + **监控推送卡片化** + **提示卡片化 + 分析中等待反馈** + @mention 解析双坑修复 | **代码层全绿**（38 项冒烟 + E2E 11/11 + ngrok 公网 card.action.trigger 200）；**飞书群实测 P0 核心链路已验证**（@帮助→indigo 卡片、监控飞书→green 卡片 #9、ARR 分析→蓝色结果卡片、钉钉红线→分析卡片）；**修复 4 个 bug**：webhook 同步阻塞→异步线程（飞书 3s 超时丢消息）、监控推送日志误报、_handle_compare_phrase 主竞品覆盖（X vs X）、**card.action.trigger 飞书双重 JSON 编码导致按钮无反应**；**飞书群实测 AI 代跑 E2E 全 PASS**（25 项：NL 15 + 卡片渲染 3 + 监控 5 + 重启记忆 1 + 限流 1）+ **卡片按钮回调公网实测 PASS**（🔄再分析/📡监控/📊周报/🔍查看详情 4 类经 ngrok 公网 + 本地双验证，飞书 API 拉群确认） | `82c81a9`→`12a2a4e`→`137098a`→`d9c6784`→`99f0230`→`3861aff`→`6658766`→`9728e39`→`6325f67`→`4da5044`→`db36496`→`acb9f29`→`c2457de`→`5261fce`→`576e3b5`→`948c521`→`cb89a01` | **W3 飞书集成闭环**：AI 代跑 E2E 25 项 + 卡片按钮回调（card.action.trigger）公网实测全 PASS（见 `06` 表 W3-CB-01）；**建议用户最后手动在飞书群点一次 3 按钮做主观确认**（自动化已验证推消息正确） |
+| **W3 已完成** | 飞书卡片渲染 + `/compare` 对比 + 会话 SQLite 持久化 + webhook 加固 + 监控体验修复 + **自然语言命令** + **帮助卡片化 + 首次@欢迎** + **报告卡片按钮** + **监控推送卡片化** + **提示卡片化 + 分析中等待反馈** + @mention 解析双坑修复 | **代码层全绿**（38 项冒烟 + E2E 11/11 + ngrok 公网 card.action.trigger 200）；**飞书群实测 P0 核心链路已验证**（@帮助→indigo 卡片、监控飞书→green 卡片 #9、ARR 分析→蓝色结果卡片、钉钉红线→分析卡片）；**修复 5 个 bug**：webhook 同步阻塞→异步线程（飞书 3s 超时丢消息）、监控推送日志误报、_handle_compare_phrase 主竞品覆盖（X vs X）、**card.action.trigger 飞书双重 JSON 编码导致按钮无反应**、**对比卡片「再分析」按钮 `scene=compare` 误用→`unknown scene: compare` 崩溃（re_compare 分支 + 旧卡片兼容分支）**；**飞书群实测 AI 代跑 E2E 全 PASS**（25 项：NL 15 + 卡片渲染 3 + 监控 5 + 重启记忆 1 + 限流 1）+ **卡片按钮回调公网实测 PASS**（🔄再分析/📡监控/📊周报/🔍查看详情 4 类经 ngrok 公网 + 本地双验证，飞书 API 拉群确认） | `82c81a9`→`12a2a4e`→`137098a`→`d9c6784`→`99f0230`→`3861aff`→`6658766`→`9728e39`→`6325f67`→`4da5044`→`db36496`→`acb9f29`→`c2457de`→`5261fce`→`576e3b5`→`948c521`→`cb89a01` | **W3 飞书集成闭环**：AI 代跑 E2E 25 项 + 卡片按钮回调（card.action.trigger）公网实测全 PASS（见 `06` 表 W3-CB-01）；**建议用户最后手动在飞书群点一次 3 按钮做主观确认**（自动化已验证推消息正确） |
 
 ### 已完成（本仓库已沉淀）
 - [x] 产品定位重设（SMB 视角，`04`）
@@ -167,6 +167,7 @@
 - [x] **P1-2 监控推送卡片化（2026-07-25，`4da5044`）**：`render_monitor_alert_card`（orange 卡片：变更明细 + 查看详情/删除监控按钮）+ `_push_alert_card` 替代纯文本 + `quick_unmonitor` 按钮命令。
 - [x] **P2 提示卡片化 + 分析中等待反馈（2026-07-25，`acb9f29`）**：`render_tip_card`（通用提示卡片，blue/green/red/orange 四色）+ `_push_tip` 方法（卡片优先失败回退文本）+ 分析中/对比中等待 → blue 卡片 + 失败 → red 卡片 + 用法提示 → orange 卡片 + 监控操作 → blue/green/orange 卡片。
 - [x] **飞书群实测用例文档（2026-07-25，`e02eabf`）**：《飞书群实测用例.md》10 类 42 条，覆盖 W2/W3 全部功能。
+- [x] **W3 收尾 bugfix：对比卡片「再分析」崩溃（2026-07-25 深夜）**：用户反馈点对比卡「🔄 再分析一次」→ `⚠️ 重新分析失败：unknown scene: compare`。根因：`render_compare_card` 把再分析按钮 `scene` 写死 `"compare"`，但 `engine.analyze()` 只认 `battle_card/pricing/weekly/discovery`，`compare` 是独立函数 → 崩溃；且「对比 飞书 vs 钉钉」解析把 `vs` 当竞品致标题变「飞书 vs vs vs 钉钉」。修复：`card_renderer._action_buttons` 对比卡改发 `cmd=re_compare` + 干净 `targets`；`bot.handle_card_action` 新增 `re_compare` 分支 + **旧卡片兼容**（遇老格式 `scene=compare` 从 query 解析竞品重跑对比）；`bot._handle_compare` 解析剔除 `vs/和/对比` 填充词；`_async_compare` 签名改 `(chat_id, targets)`。`py_compile` 三文件 OK + 直接调用 `handle_card_action` 传入旧卡片值验证路由正确（targets 清洗为 ['飞书','钉钉']）。**关键踩坑**：修复代码早已写对，但跑着 `:8011` 的 webhook 服务是旧进程（PID 27932），Python 不热加载 → 点击仍报错；杀旧进程 + 重新 `uvicorn webhook_server:app --port 8011`（开发期 `SKIP_SIGNATURE=1`）拉起后，**用户在飞书群点击「重新对比」实测出正常对比卡，闭环**。**铁律**：改 `bot.py`/`card_renderer.py` 后必须重启 `:8011` webhook 服务才生效（ngrok 隧道独立，无需动）。
 
 ---
 

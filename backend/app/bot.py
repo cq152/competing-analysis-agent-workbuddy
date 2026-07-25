@@ -226,14 +226,16 @@ class LarkBot:
 
     def _handle_compare(self, msg, text: str) -> None:
         """处理「对比 A B [C]」或「/compare A B [C]」：显式多竞品对比。"""
-        # 去掉命令前缀（"对比 " 或 "/compare " 或 "compare "）
+        # 去掉命令前缀（"对比 " / "/compare " / "compare "），并剔除 vs/和/对比 等填充词，
+        # 使「对比 飞书 vs 钉钉」也能正确解析为 ["飞书","钉钉"]
         rest = re.sub(r"^(对比|/compare|compare)\s*", "", text).strip()
-        targets = [t for t in rest.split() if t]
+        FILLER = {"vs", "VS", "和", "对比", "compare", "/compare"}
+        targets = [t for t in rest.split() if t and t not in FILLER]
         if len(targets) < 2:
             self._push_tip(msg.chat_id, "📖 用法提示", "对比需要至少 2 个竞品。\n\n**示例：**\n`对比 飞书 钉钉`\n`对比 飞书 钉钉 企业微信`", "orange")
             return
         self._remember_main(msg.chat_id, targets[0])
-        threading.Thread(target=self._async_compare, args=(msg, targets), daemon=True).start()
+        threading.Thread(target=self._async_compare, args=(msg.chat_id, targets), daemon=True).start()
         self._push_tip(msg.chat_id, "🔍 对比分析中", f"正在检索并横向对比 **{' / '.join(targets)}**…\n稍候片刻，对比卡片即将送达。", "blue")
 
     def _handle_compare_phrase(self, msg, text: str) -> None:
@@ -252,20 +254,23 @@ class LarkBot:
         # 注意：不更新主竞品——"和X对比"语义下 X 是对比对象，主竞品保持不变。
         # 只有显式「对比 A B」(_handle_compare) 才 remember_main(targets[0])。
         # 此前这里误写 _remember_main(chat_id, other) 导致连续对比时主竞品被覆盖（X vs X bug）。
-        threading.Thread(target=self._async_compare, args=(msg, [main, other]), daemon=True).start()
+        threading.Thread(target=self._async_compare, args=(msg.chat_id, [main, other]), daemon=True).start()
         self._push_tip(msg.chat_id, "🔍 对比分析中", f"正在检索并对比 **{main} / {other}**…\n稍候片刻，对比卡片即将送达。", "blue")
 
-    def _async_compare(self, msg, targets: list[str]) -> None:
-        """异步跑对比引擎并卡片优先推送（复用 W3.1 push_card）。"""
+    def _async_compare(self, chat_id: str, targets: list[str]) -> None:
+        """异步跑对比引擎并卡片优先推送（复用 W3.1 push_card）。
+
+        与 _async_analyze 对齐：直接收 chat_id（卡片按钮回调也用 chat_id 调用）。
+        """
         try:
             res = compare(targets)
         except Exception as e:  # noqa: BLE001
-            self._push_tip(msg.chat_id, "⚠️ 对比分析失败", f"错误信息：{e}\n\n请稍后重试，或换个竞品组合。", "red")
+            self._push_tip(chat_id, "⚠️ 对比分析失败", f"错误信息：{e}\n\n请稍后重试，或换个竞品组合。", "red")
             return
         # W3.3：对比也存历史（会话连续/回溯），摘要截取前 200 字
         try:
             get_session_store().save_analysis(
-                msg.chat_id, "compare", " vs ".join(targets), (res.analysis or "")[:200]
+                chat_id, "compare", " vs ".join(targets), (res.analysis or "")[:200]
             )
         except Exception as e:  # noqa: BLE001
             print(f"[lark] save compare history failed: {e}")
@@ -273,12 +278,12 @@ class LarkBot:
             from app.card_renderer import render_card
 
             card = render_card(res)
-            if card and self.push_card(msg.chat_id, card):
+            if card and self.push_card(chat_id, card):
                 return
         except Exception as e:  # noqa: BLE001
             print(f"[lark] compare card render/send failed, fallback to text: {e}")
         text = res.analysis or str(res)
-        self._reply(msg, text)
+        self.push(chat_id, text)
 
     def _reply(self, msg, text: str) -> None:
         # 飞书 `im.v1.message.create` 实测：receive_id_type="message_id"（引用回复）报
@@ -345,9 +350,28 @@ class LarkBot:
             if not query:
                 self.push(chat_id, "⚠️ 按钮信息不完整，请直接发消息给我。")
                 return
+            # 兼容旧版对比卡片：结构上误用 scene="compare"（正确应是 re_compare）。
+            # 从 query 中解析竞品（剔除 vs/和/对比 等填充词）后重新跑对比。
+            if scene == "compare":
+                parts = [t for t in re.split(r"\s+", query) if t and t not in ("vs", "VS", "和", "对比", "compare")]
+                if len(parts) >= 2:
+                    self.push(chat_id, f"🔍 重新对比 {' / '.join(parts)} 中…")
+                    threading.Thread(target=self._async_compare, args=(chat_id, parts), daemon=True).start()
+                else:
+                    self.push(chat_id, "⚠️ 这张卡片较旧，请重新发「对比 A B」给我。")
+                return
             self.push(chat_id, f"🔍 {scene} 重新分析中…")
             threading.Thread(
                 target=self._async_card_re_analyze, args=(chat_id, scene, query), daemon=True
+            ).start()
+        elif cmd == "re_compare":
+            targets = value.get("targets", [])
+            if not isinstance(targets, list) or len(targets) < 2:
+                self.push(chat_id, "⚠️ 按钮信息不完整，请直接发「对比 A B」给我。")
+                return
+            self.push(chat_id, f"🔍 重新对比 {' / '.join(targets)} 中…")
+            threading.Thread(
+                target=self._async_compare, args=(chat_id, targets), daemon=True
             ).start()
         elif cmd == "quick_monitor":
             competitor = value.get("competitor", "")
