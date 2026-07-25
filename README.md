@@ -1,7 +1,7 @@
 # 竞品分析 Agent · 项目总览
 
 > 一个跑在**飞书群**里的「竞品雷达 + 军师」，卖给**中小企业（SMB）**。
-> 当前阶段：**W2 后端开发完成（代码层 + 飞书集成 ngrok 实测全绿），W3 进行中**；✅ W2 **飞书集成已闭环**（FS-01/MR-01/FS-02 经 ngrok 公网实测 PASS，见 `06` 表）；W3 **3.1 卡片渲染已提交 + 3.2 `/compare` 已提交（`12a2a4e`）+ 3.3 会话持久化已实现验证（待提交）**，3.4 webhook 加固待推进；Aily 仅作参考，主通道为代码 Webhook（见 `08` + `开发记录与计划.md`）。
+> 当前阶段：**W2 后端开发完成（代码层 + 飞书集成 ngrok 实测全绿），W3 进行中**；✅ W2 **飞书集成已闭环**（FS-01/MR-01/FS-02 经 ngrok 公网实测 PASS，见 `06` 表）；W3 **3.1 卡片渲染已提交 + 3.2 `/compare` 已提交（`12a2a4e`）+ 3.3 会话持久化已提交（`137098a`）**，3.4 webhook 加固待推进；Aily 仅作参考，主通道为代码 Webhook（见 `08` + `开发记录与计划.md`）。
 > 本文件是项目的单一事实来源（single source of truth）与版本管理入口。
 
 ---
@@ -104,7 +104,7 @@
 |---|---|---|---|---|
 | **W1 调研与验证** | 市场/产品/定位/4 场景提示词/红线/风险测试/飞书接入（Aily→代码 Webhook） | **4 个 P0 飞书群实测 PASS**（PR-02/SYS-04/AD-01/AD-02），MVP Gate 闭环 | 多个（详见 `12`） | 进入 W2 正式开发 |
 | **W2 开发（v3，监控优先）** | 监控雷达（唯一硬差异化）+ 结构化分析引擎 + 优雅降级 + 中文源占位；v3 修订（G6降级/监控提前/中文源占位） | **代码层全 PASS**（端到端 DDG 3 条 + 1778 字带引用；pricing 红线 G1 合规）+ **飞书集成 PASS**（FS-01/MR-01/FS-02 经 ngrok 公网实测）；`06` 表追加 W2 PASS 行 | `af8a4a4` + `017b164` + `ffca813` + `cc7d9d8` | **飞书集成已闭环**：MR-01 监控推群 + FS-01 群聊@ + FS-02 周报 经 ngrok 公网实测 PASS（见 `06` 表） |
-| **W3 进行中** | 飞书卡片渲染 + `/compare` 对比 + 会话 SQLite 重建 + webhook 加固 | 3.1 卡片渲染已提交（`82c81a9`）；**3.2 `/compare` 已提交（`12a2a4e`，已实现并验证：compare.txt 提示词 + engine.compare + 命令路由 + 和X对比记忆；红线回归 PASS，见 `06` W3-CP-*）**；**3.3 `sessions.py` 重建已实现并验证（持久化主竞品记忆+分析历史，模拟重启不丢，见 `06` W3-SE-01）**；3.4 webhook 加固待做 | 见 `开发记录与计划.md` W3 章 | 见 `开发记录与计划.md` W3 章（3.1 已提交 `82c81a9`；3.2 已提交 `12a2a4e`；3.3 待提交） |
+| **W3 进行中** | 飞书卡片渲染 + `/compare` 对比 + 会话 SQLite 重建 + webhook 加固 | 3.1 卡片渲染已提交（`82c81a9`）；**3.2 `/compare` 已提交（`12a2a4e`，已实现并验证：compare.txt 提示词 + engine.compare + 命令路由 + 和X对比记忆；红线回归 PASS，见 `06` W3-CP-*）**；**3.3 `sessions.py` 重建已提交（`137098a`，已实现并验证：持久化主竞品记忆+分析历史，模拟重启不丢，见 `06` W3-SE-01）**；3.4 webhook 加固待做 | 见 `开发记录与计划.md` W3 章 | 见 `开发记录与计划.md` W3 章（3.1 已提交 `82c81a9`；3.2 已提交 `12a2a4e`；3.3 已提交 `137098a`） |
 
 ### 已完成（本仓库已沉淀）
 - [x] 产品定位重设（SMB 视角，`04`）
@@ -157,7 +157,7 @@
 - [x] **W2 验证已落库（2026-07-25）**：详见 `开发记录与计划.md` W2 章 §4——代码层/引擎冒烟/红线回归全绿（真实 DDG 搜索 3 条 + DeepSeek 1778 字带引用；pricing 红线 G1 合规）；`06-测试记录表.csv` 追加 W2 代码层 PASS 行（W2-IMP/E2E/RED/RBAC/CLN）。**飞书集成项（FS-01/MR-01/FS-02）已 ngrok 公网实测闭环 PASS**（详见 `06` 表备注：ngrok 公网 IP 31.22.111.185→:8011→真实推群 200，monitor 后台轮询实测推送告警）。
 - [x] **W3.1 已提交（2026-07-25）**：3.1 `card_renderer.py`（飞书卡片渲染）+ `bot.py`（`push_card` 方法 + 卡片优先回复 + **mention 剥离 bugfix**）已提交；门禁（W2 飞书实测闭环）已满足（MR-01 经 ngrok 实测 PASS）。按 v3 修正（来源分色降级为仅 🔵通用、监控已前置不重复）。
 - [x] **W3.2 已提交（2026-07-25，`12a2a4e`）**：`validation/prompts/compare.txt`（新增提示词唯一入口）+ `engine.compare()` + `bot.py` 命令路由（`/compare` + 「和 X 对比」in-memory 记忆）+ `render_compare_card` 改造。离线冒烟 6 项全绿、真实 E2E 推群、红线回归（Pitch vs Gamma 不编造）PASS（见 `06` W3-CP-*）。
-- [x] **W3.3 已实现并验证（2026-07-25）**：重建 `backend/app/sessions.py`（SQLite `sessions`+`analysis_history` 表）+ 单例 `get_session_store()`；`bot.py` 移除 `_last_compare` in-memory，主竞品记忆 + 每次分析历史跨重启持久化。离线冒烟（`_smoke33.py`）全绿（持久化往返 + 模拟重启不丢 + 无循环导入 + compare 链路完好），已重启 uvicorn 加载新代码（见 `06` W3-SE-01）。待提交后继续 3.4 webhook 加固。
+- [x] **W3.3 已提交（2026-07-25，`137098a`）**：重建 `backend/app/sessions.py`（SQLite `sessions`+`analysis_history` 表）+ 单例 `get_session_store()`；`bot.py` 移除 `_last_compare` in-memory，主竞品记忆 + 每次分析历史跨重启持久化。离线冒烟（`_smoke33.py`）全绿（持久化往返 + 模拟重启不丢 + 无循环导入 + compare 链路完好），已重启 uvicorn 加载新代码（见 `06` W3-SE-01）。继续 3.4 webhook 加固。
 
 ---
 
