@@ -21,7 +21,7 @@ import lark_oapi as lark
 from lark_oapi.api.im.v1 import CreateMessageRequest, CreateMessageRequestBody
 
 from .config import settings
-from .engine import analyze, compare, list_scenes, classify_intent
+from .engine import analyze, compare, list_scenes, classify_intent, general_qa
 from .sessions import get_session_store
 
 # 声明式配置（不含密钥，密钥走 .env）
@@ -250,12 +250,40 @@ class LarkBot:
         if intent == "unknown":
             self._push_clarify_card(msg)
             return
+        if intent == "chat":
+            self._push_tip(
+                msg.chat_id,
+                "💬 通用问答",
+                "正在处理你的请求（可联网检索）…\n稍候片刻，结果即将送达。",
+                "blue",
+            )
+            threading.Thread(target=self._async_general_qa, args=(msg, clean), daemon=True).start()
+            return
         if intent == "compare":
             self._handle_compare(msg, clean)
             return
         # battle_card / pricing / weekly / discovery
         self._push_tip(msg.chat_id, "🔍 分析中", f"正在检索网络情报并生成**{intent}**分析…\n稍候片刻，结果即将送达。", "blue")
         self._async_analyze(msg, intent, clean)
+
+    def _async_general_qa(self, msg, text: str) -> None:
+        """通用问答兜底（异步）：与竞品分析无关但属助手能帮忙的请求。"""
+        try:
+            answer = general_qa(text, use_web=True)
+        except Exception as e:  # noqa: BLE001
+            self._push_tip(msg.chat_id, "⚠️ 通用问答失败", f"错误信息：{e}\n\n请稍后重试。", "red")
+            return
+        # 卡片 markdown 有长度限制：短答案用卡片，长答案直接走文本（上限更高）
+        if len(answer) <= 1800:
+            try:
+                from app.card_renderer import render_qa_card
+
+                card = render_qa_card(text, answer)
+                if card and self.push_card(msg.chat_id, card):
+                    return
+            except Exception as e:  # noqa: BLE001
+                print(f"[lark] qa card render/send failed, fallback to text: {e}")
+        self._reply(msg, f"💬 通用问答：\n\n{answer}")
 
     def _push_clarify_card(self, msg) -> None:
         """无关 / 无法识别为竞品分析意图时，友好澄清（不生成销售应对卡等分析卡）。"""

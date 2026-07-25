@@ -314,6 +314,32 @@ def render_clarify_card() -> dict:
     }
 
 
+def render_qa_card(question: str, answer: str) -> dict:
+    """通用问答卡（off-topic 但属 AI 助手能帮忙的请求）。
+
+    仅用于较短回答（<= ~1800 字）；超长由 bot 直接走文本回退。
+    """
+    elements = [
+        {
+            "tag": "markdown",
+            "content": f"**你的问题：**\n> {question}",
+        },
+        {"tag": "hr"},
+        {
+            "tag": "markdown",
+            "content": answer,
+        },
+    ]
+    return {
+        "config": {"wide_screen_mode": True},
+        "header": {
+            "title": {"tag": "plain_text", "content": "💬 通用问答"},
+            "template": "blue",
+        },
+        "elements": elements,
+    }
+
+
 def render_monitor_alert_card(competitor: str, added: list[str], removed: list[str]) -> dict:
     """渲染竞品雷达告警卡片（P1：取代纯文本推送）。
 

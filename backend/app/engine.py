@@ -18,6 +18,7 @@ from pathlib import Path
 from openai import OpenAI
 
 from .config import settings
+from .logger import log
 from .models import AnalysisResult, CompareResult, Source
 
 # validation/prompts 相对本文件的路径：backend/app/engine.py -> ../../../validation/prompts
@@ -268,21 +269,24 @@ def compare(targets: list[str], query: str = "") -> CompareResult:
 def classify_intent(text: str) -> str:
     """意图鉴别：判断用户消息是否属于竞品分析类请求。
 
-    返回场景键（battle_card / pricing / weekly / discovery / compare）或 "unknown"。
+    返回场景键（battle_card / pricing / weekly / discovery / compare / chat）或 "unknown"。
     - 用于修复「无关消息被默认强转为销售应对卡」的问题；unknown 时 bot 应澄清。
+    - chat：与竞品分析无关、但属 AI 助手能帮忙的通用请求（数据分析/解释/代码/网络查询等）。
     - LLM 调用失败时保守返回 "unknown"（避免把无关消息当分析处理而硬凑分析卡）。
     """
-    known = {"battle_card", "pricing", "weekly", "discovery", "compare"}
+    known = {"battle_card", "pricing", "weekly", "discovery", "compare", "chat"}
     client = OpenAI(api_key=settings.api_key, base_url=settings.base_url)
     system = (
-        "你是竞品情报助手的意图分类器。判断用户消息是否属于竞品分析类请求。"
-        "只输出以下之一（不要任何解释或多余标点）：\n"
+        "你是竞品情报助手的意图分类器。判断用户消息属于哪一类。只输出以下之一"
+        "（不要任何解释或多余标点）：\n"
         "battle_card —— 销售应对/话术/客户拿竞品压我们/怎么回竞品\n"
         "pricing —— 价格/定价/报价/降价/收费\n"
         "weekly —— 竞品周报/本周动态汇总\n"
         "discovery —— 发现竞品/调研某赛道竞品/竞品名单\n"
         "compare —— 明确对比两个及以上竞品（即使没写“对比”二字）\n"
-        "unknown —— 与竞品分析无关：闲聊、打招呼、UI/按钮报错、技术问题、非商业话题"
+        "chat —— 与竞品分析无关、但属 AI 助手能帮忙的通用请求：数据分析、解释概念、"
+        "写代码、总结、翻译、或需要联网查询最新信息等非商业话题\n"
+        "unknown —— 完全无法归类、明显无意义或纯乱码"
     )
     try:
         resp = client.chat.completions.create(
@@ -306,3 +310,62 @@ def classify_intent(text: str) -> str:
         return "unknown"
     except Exception:  # noqa: BLE001
         return "unknown"
+
+
+def general_qa(text: str, use_web: bool = True) -> str:
+    """通用问答兜底：处理与竞品分析无关、但属 AI 助手能帮忙的请求。
+
+    典型场景：数据分析、概念解释、写代码、总结、翻译、或需要联网查询最新信息。
+    默认启用联网检索（复用 Searcher/DuckDuckGo），检索失败则优雅退化为纯模型知识，
+    不整体失败。
+
+    Args:
+        text: 用户原始问题
+        use_web: 是否联网检索（默认 True，满足「网络查询数据」诉求）
+
+    Returns:
+        模型生成的回答文本（非空；偶发空 completion 时重试一次）。
+    """
+    client = OpenAI(api_key=settings.api_key, base_url=settings.base_url)
+    system = (
+        "你是一个通用 AI 助手，嵌入在飞书群里。用户 @ 你时可能提出与竞品分析无关的请求，"
+        "例如分析数据、解释概念、写代码、总结内容、翻译、或需要联网查询最新信息。\n"
+        "请直接、准确、有帮助地回答用户的问题。\n"
+        "如果提供了「检索资料」，优先基于资料回答并标注来源；资料不足时用自己的知识补充，"
+        "并说明哪些是推断。回答使用简体中文，条理清晰，必要时用要点或表格呈现。"
+    )
+    context = ""
+    if use_web:
+        try:
+            from .searcher import Searcher
+
+            results = Searcher().search(text, max_results=settings.search_max_results)
+            if results:
+                lines = [
+                    f"[{i}] {r.title}\n{r.snippet}\n来源: {r.url}"
+                    for i, r in enumerate(results[:5], 1)
+                ]
+                context = "【检索资料】\n" + "\n\n".join(lines) + "\n"
+        except Exception as e:  # noqa: BLE001
+            log.warning(f"general_qa 联网检索失败，退化为纯模型: {e}")
+    user_content = text
+    if context:
+        user_content = (
+            f"{text}\n\n{context}\n\n"
+            "（请优先基于以上检索资料回答；未覆盖的部分用你的知识补充并说明。）"
+        )
+    answer = ""
+    for _ in range(2):  # 偶发空 completion 时重试一次
+        resp = client.chat.completions.create(
+            model=settings.model,
+            temperature=0.4,
+            max_tokens=2000,
+            messages=[
+                {"role": "system", "content": system},
+                {"role": "user", "content": user_content},
+            ],
+        )
+        answer = resp.choices[0].message.content or ""
+        if answer.strip():
+            break
+    return answer
