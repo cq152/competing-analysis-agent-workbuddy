@@ -1,7 +1,7 @@
 # 竞品分析 Agent · 项目总览
 
 > 一个跑在**飞书群**里的「竞品雷达 + 军师」，卖给**中小企业（SMB）**。
-> 当前阶段：**W3 已闭环**（代码层 + 飞书集成双验证）；**W4 进行中（卡片增强 + 飞书云文档承接）**：W4.1 引擎 summary+outline ✅ / W4.2 卡片增强（结论+大纲+云文档链接）✅ 已提交并加载；W4.3 云文档模块 `docx_client.py`（直接 Docx API 创建富文本：标题/列表/引用/代码/callout 高亮块/表格/彩色文字，markdown→block 自动转换）✅ 代码完成，**待用户开通 `docx:document` 权限后实测**；W4.4 分析流程串联云文档（已 wire `bot._attach_doc`）待权限实测；✅ W2 **飞书集成已闭环**；Aily 仅作参考，主通道为代码 Webhook。**🆕 通用问答兜底（off-topic 但属助手能帮的消息走 LLM+联网）已加入，待用户群内实测**。
+> 当前阶段：**W3 已闭环**（代码层 + 飞书集成双验证）；**W4 进行中（卡片增强 + 飞书云文档承接）**：W4.1 引擎 summary+outline ✅ / W4.2 卡片增强（结论+大纲+云文档链接）✅ 已提交并加载；W4.3 云文档模块 `docx_client.py`（直接 Docx API 创建富文本：标题/列表/callout 高亮块/彩色加粗文字，手写 markdown→block 解析器，规避飞书表格/code/divider 块 schema 摩擦）✅ 代码完成 + **云文档 E2E 实测 PASS**（创建/追加/公开/链接，真实 `应对 飞书` 卡片挂 📄链接）；W4.4 分析流程串联云文档（`bot._attach_doc`）✅ **E2E 实测 PASS**；✅ W2 **飞书集成已闭环**；Aily 仅作参考，主通道为代码 Webhook。**🆕 通用问答兜底（off-topic 但属助手能帮的消息走 LLM+联网）已加入，待用户群内实测**。**云文档实测**：分析 `Li8ldVaB…m7qnzh`、对比 `ZHKddadL…dnOB`、真实命令 `V4f2dy5U…Wc5WTtnoc`。
 > 本文件是项目的单一事实来源（single source of truth）与版本管理入口。
 
 ---
@@ -111,7 +111,7 @@
 | **W1 调研与验证** | 市场/产品/定位/4 场景提示词/红线/风险测试/飞书接入（Aily→代码 Webhook） | **4 个 P0 飞书群实测 PASS**（PR-02/SYS-04/AD-01/AD-02），MVP Gate 闭环 | 多个（详见 `12`） | 进入 W2 正式开发 |
 | **W2 开发（v3，监控优先）** | 监控雷达（唯一硬差异化）+ 结构化分析引擎 + 优雅降级 + 中文源占位；v3 修订（G6降级/监控提前/中文源占位） | **代码层全 PASS**（端到端 DDG 3 条 + 1778 字带引用；pricing 红线 G1 合规）+ **飞书集成 PASS**（FS-01/MR-01/FS-02 经 ngrok 公网实测）；`06` 表追加 W2 PASS 行 | `af8a4a4` + `017b164` + `ffca813` + `cc7d9d8` | **飞书集成已闭环**：MR-01 监控推群 + FS-01 群聊@ + FS-02 周报 经 ngrok 公网实测 PASS（见 `06` 表） |
 | **W3 已完成** | 飞书卡片渲染 + `/compare` 对比 + 会话 SQLite 持久化 + webhook 加固 + 监控体验修复 + **自然语言命令** + **帮助卡片化 + 首次@欢迎** + **报告卡片按钮** + **监控推送卡片化** + **提示卡片化 + 分析中等待反馈** + @mention 解析双坑修复 | **代码层全绿**（38 项冒烟 + E2E 11/11 + ngrok 公网 card.action.trigger 200）；**飞书群实测 P0 核心链路已验证**；**修复 5 个 bug**（含 card.action.trigger 双重 JSON 编码、对比卡再分析 `unknown scene: compare`）；**飞书群实测 AI 代跑 E2E 全 PASS（25 项）** + **卡片按钮回调公网实测 PASS（4 类）** | `82c81a9`→…→`cb89a01` | **W3 飞书集成闭环**（消息链路 + 卡片按钮回调双验证） |
-| **W4 进行中** | **W4.1 引擎 summary+outline**（AnalysisResult/CompareResult 加字段；outline 正则免费抽取 + summary 轻量 LLM 一句话结论，主 prompt 不动）；**W4.2 卡片增强**（分析/对比卡顶部加 📌核心结论 + 📑报告大纲，有云文档则正文截断预览 + 📄云文档链接）；**W4.3 云文档模块 `docx_client.py`**（直接 Docx API：创建文档→markdown 转富文本块→追加→设为公开可读；`> 💡` 引用自动升级 callout 高亮块）；**W4.4 串联**（`bot._attach_doc` 分析后建云文档挂 `doc_url`） | **W4.1/W4.2 本地单测全 PASS**（outline 抽取/summary 回退/卡片增强渲染/云文档 markdown 构造/callout patch 均验证）；W4.3 代码完成、可导入；**待用户开通 `docx:document` 权限后 E2E 实测**（创建/追加/公开/链接） | 待提交（W4.1–4.4 一批） | **唯一阻塞：飞书 `docx:document` 权限未开通** → W4.3/4.4 云文档链路未实测；权限开通后即可 E2E 验证 |
+| **W4 进行中（云文档已闭环）** | **W4.1 引擎 summary+outline**（AnalysisResult/CompareResult 加字段；outline 正则免费抽取 + summary 轻量 LLM 一句话结论，主 prompt 不动）；**W4.2 卡片增强**（分析/对比卡顶部加 📌核心结论 + 📑报告大纲，有云文档则正文截断预览 + 📄云文档链接）；**W4.3 云文档模块 `docx_client.py`**（直接 Docx API：创建文档→手写 markdown→富文本块解析器 `_md_to_blocks` 追加→设为公开可读；标题/H1-3、段落、bullet·ordered 用「• 」前缀段落块、callout 高亮块、彩色加粗；**规避飞书原生表格/code/divider 块 schema 摩擦，对比矩阵改用 callout 呈现**）；**W4.4 串联**（`bot._attach_doc` 分析/对比后建云文档挂 `doc_url`，失败静默降级） | **W4.3/4.4 云文档 E2E 实测 PASS**（用户开通 `docx:document` 后）：`_run_w4_docx_e2e.py` 创建+追加+公开+链接成功，产出 分析 `Li8ldVaB3oPL7Yxix4dc0m7qnzh` + 对比 `ZHKddadLdoybATxKTLNchPEdnOB`；真实命令 `应对 飞书` 经 uvicorn+ngrok 推送卡片确认含 📄查看完整图文报告链接 `V4f2dy5UpoMSdBxYNnWc5WTtnoc` + 三按钮（🔄/📡/📊）；W4.1/4.2 本地单测全 PASS | 待提交（W4.1–4.4 + docx_client 重写一批） | **W4.3/4.4 云文档链路已 E2E 闭环**；`docx:document` 权限已开通；drive 公开可读降级为可选（未开 drive 权限时 `set_public_readable` 安全返回 False，链接仍可用）；飞书原生表格块接入摩擦已决策规避（callout 替代） |
 
 ### 已完成（本仓库已沉淀）
 - [x] 产品定位重设（SMB 视角，`04`）
