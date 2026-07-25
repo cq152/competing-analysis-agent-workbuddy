@@ -44,13 +44,23 @@ REQUIRE_MENTION_IN_GROUP = BOT_CONFIG.get("require_mention_in_group", True)
 ALLOWED_CHATS = BOT_CONFIG.get("allowed_chats", [])  # 空=不限制
 REPLY_IF_UNAUTHORIZED = BOT_CONFIG.get("reply_if_unauthorized", False)  # 非白名单群是否回提示
 
-# 场景路由：命令前缀 -> scene key（可被 bot_config.json 的 scene_aliases 覆盖）
+# 场景路由：命令前缀 -> scene key（无 / 自然语言为主，兼容旧 / 前缀）
 SCENE_ALIASES = {
-    "/battle": "battle_card",
-    "/price": "pricing",
-    "/weekly": "weekly",
-    "/discover": "discovery",
-    "/report": "weekly",
+    "battle": "battle_card",    "/battle": "battle_card",
+    "price": "pricing",         "/price": "pricing",
+    "weekly": "weekly",         "/weekly": "weekly",
+    "discover": "discovery",    "/discover": "discovery",
+    "report": "weekly",         "/report": "weekly",
+    "周报": "weekly",
+    "发现": "discovery",
+    "发现竞品": "discovery",
+    "定价": "pricing",
+    "价格": "pricing",
+    "应对": "battle_card",
+    "battle card": "battle_card",
+    "销售应对": "battle_card",
+    "帮助": None,  # 走 help 分支
+    "help": None,
 }
 if isinstance(BOT_CONFIG.get("scene_aliases"), dict):
     SCENE_ALIASES.update(BOT_CONFIG["scene_aliases"])
@@ -58,12 +68,15 @@ if isinstance(BOT_CONFIG.get("scene_aliases"), dict):
 
 def _default_help() -> str:
     lines = [
-        f"我是 {BOT_NAME}，竞品雷达 + 军师。用法：",
-        "/battle 客户总拿 X 压我们，怎么回？",
-        "/price 竞品降价了，我们怎么跟？",
-        "/weekly 生成本周竞品周报",
-        "/discover 我们做 XX 产品，帮我发现竞品",
-        "不带前缀默认按 battle_card（销售应对卡）处理。",
+        f"我是 {BOT_NAME}，竞品雷达 + 军师。直接对我说：",
+        "「客户总拿飞书压我们，怎么应对？」（销售应对卡）",
+        "「钉钉降价了，我们怎么跟？」（定价分析）",
+        "「本周竞品周报」（周报生成）",
+        "「我们做协同办公，帮我发现竞品」（竞品发现）",
+        "「对比 飞书 钉钉 企业微信」（多竞品对比）",
+        "「监控 飞书」（添加竞品监控，有变化自动推群）",
+        "「监控列表 / 删除监控 1」（管理监控项）",
+        "「帮助」重新显示本说明",
         f"可用场景：{', '.join(list_scenes())}",
     ]
     return "\n".join(lines)
@@ -96,10 +109,18 @@ class LarkBot:
 
     @staticmethod
     def parse_command(text: str) -> tuple[str, str]:
+        """从文本中匹配场景别名（最长匹配优先，避免"发现竞品"被"发现"误截）。
+        返回 (scene, 去掉别名后的剩余 query)。"""
         text = text.strip()
-        for alias, scene in SCENE_ALIASES.items():
+        # 按别名长度降序排列，确保"发现竞品"优先于"发现"
+        candidates = sorted(
+            [(a, s) for a, s in SCENE_ALIASES.items() if s is not None],
+            key=lambda x: -len(x[0]),
+        )
+        for alias, scene in candidates:
             if text.startswith(alias):
-                return scene, text[len(alias):].strip()
+                rest = text[len(alias):].strip()
+                return scene, rest
         return DEFAULT_SCENE, text
 
     def handle_message(self, data: lark.im.v1.P2ImMessageReceiveV1) -> None:
@@ -131,18 +152,24 @@ class LarkBot:
         clean = re.sub(r"@_user_[^\s@]+", "", raw_text)
         clean = re.sub(r"<at[^>]*>.*?</at>", "", clean, flags=re.DOTALL)
         clean = clean.strip()
-        if not clean or clean in ("/help", "帮助", "?"):
+        if not clean or clean in ("/help", "帮助", "help", "?"):
             self._reply(msg, HELP_TEXT)
             return
-        if clean.startswith("/monitor"):
+        # 命令路由：优先自然语言（无 /），同时兼容旧 / 前缀
+        # 注意顺序：子命令（列表/删除）必须优先于「监控 <竞品>」，避免"监控列表"被误判为监控"列表"
+        if re.match(r"^(监控列表|删除监控|monitor\s+list|monitor\s+remove)", clean):
             self._handle_monitor(msg, clean)
             return
-        if clean.startswith("/compare"):
-            self._handle_compare(msg, clean)
+        if re.match(r"^/?(监控|monitor|添加监控|添加)", clean):
+            self._handle_monitor(msg, clean)
             return
-        # 「和 X 对比」/「对比 X」自然语义：自动补上次主竞品（W3.2 in-memory）
+        # 「和 X 对比」/「对比 X」（单参数=补主竞品）先于「对比 A B」（多参数）
         if re.match(r"^(和\s+\S+\s*对比|对比\s+\S+)$", clean):
             self._handle_compare_phrase(msg, clean)
+            return
+        # 「对比 A B」：多竞品显式对比（"对比"后至少两个词）
+        if re.match(r"^/?(对比|compare)\s*\S+\s+\S+", clean):
+            self._handle_compare(msg, clean)
             return
         scene, query = self.parse_command(clean)
         # 异步分析，避免阻塞回调触发超时重试
@@ -182,11 +209,12 @@ class LarkBot:
         get_session_store().set_primary(chat_id, target)
 
     def _handle_compare(self, msg, text: str) -> None:
-        """处理 /compare A B [C]：显式多竞品对比。"""
-        rest = text[len("/compare"):].strip()
+        """处理「对比 A B [C]」或「/compare A B [C]」：显式多竞品对比。"""
+        # 去掉命令前缀（"对比 " 或 "/compare " 或 "compare "）
+        rest = re.sub(r"^(对比|/compare|compare)\s*", "", text).strip()
         targets = [t for t in rest.split() if t]
         if len(targets) < 2:
-            self._reply(msg, "用法：/compare <竞品A> <竞品B> [竞品C]\n例如：/compare 飞书 钉钉")
+            self._reply(msg, "用法：对比 <竞品A> <竞品B> [竞品C]\n例如：对比 飞书 钉钉")
             return
         self._remember_main(msg.chat_id, targets[0])
         threading.Thread(target=self._async_compare, args=(msg, targets), daemon=True).start()
@@ -198,12 +226,12 @@ class LarkBot:
         cleaned = cleaned.replace("对比", "").strip()
         parts = cleaned.split()
         if not parts:
-            self._reply(msg, "用法：和 <竞品> 对比 / 对比 <竞品>（需先 /compare A B 记录主竞品）")
+            self._reply(msg, "用法：和 <竞品> 对比 / 对比 <竞品>（需先「对比 A B」记录主竞品）")
             return
         other = parts[0]
         main = get_session_store().get_primary(msg.chat_id)
         if not main:
-            self._reply(msg, "还没有记录主竞品，请先用 /compare A B 指定，例如 /compare 飞书 钉钉")
+            self._reply(msg, "还没有记录主竞品，请先用「对比 A B」指定，例如：对比 飞书 钉钉")
             return
         self._remember_main(msg.chat_id, other)
         threading.Thread(target=self._async_compare, args=(msg, [main, other]), daemon=True).start()
@@ -283,51 +311,48 @@ class LarkBot:
         return True
 
     def _handle_monitor(self, msg, text: str) -> None:
-        """处理 /monitor add|list|remove 子命令（v3 监控雷达入口）。"""
+        """处理监控命令：「监控 飞书」「监控列表」「删除监控 1」等（兼容 /monitor 前缀）。"""
         from app.monitor import get_monitor_service
 
-        parts = text.split(maxsplit=2)
-        if len(parts) < 2:
-            self._reply(
-                msg,
-                "用法：\n  /monitor add <竞品名>\n  /monitor list\n  /monitor remove <ID>",
-            )
-            return
-        sub = parts[1]
+        # 标准化：去掉 / 前缀
+        text = re.sub(r"^/", "", text).strip()
         svc = get_monitor_service(self)
 
-        if sub == "add":
-            competitor = parts[2].strip() if len(parts) > 2 else ""
-            if not competitor:
-                self._reply(msg, "请指定竞品名，如 /monitor add 飞书")
-                return
-            mid, created = svc.store.add(competitor, msg.chat_id)
-            if created:
-                self._reply(msg, f"✅ 已加入监控 #{mid}：{competitor}（定时搜索，有变化推群）")
-            else:
-                self._reply(msg, f"⚠️ 本群已监控「{competitor}」（#{mid}），无需重复添加")
-        elif sub == "list":
+        # 子命令判断：优先精确匹配
+        if re.match(r"^(监控列表|monitor\s+list|list)$", text):
             items = svc.store.list(msg.chat_id)
             if not items:
-                self._reply(msg, "本群暂无可监控竞品。用 /monitor add <竞品名> 添加。")
+                self._reply(msg, "本群暂无可监控竞品。用「监控 <竞品名>」添加。")
                 return
             lines = ["📡 本群监控列表："]
             for m in items:
                 lines.append(f"  #{m['id']} {m['competitor']}（场景：{m['scene']}）")
             self._reply(msg, "\n".join(lines))
-        elif sub == "remove":
+            return
+
+        if re.match(r"^(删除监控|monitor\s+remove|remove)\s*\d+", text):
+            mid_str = re.sub(r"^(删除监控|monitor\s+remove|remove)\s*", "", text).strip()
             try:
-                mid = int(parts[2].strip())
-            except (ValueError, IndexError):
-                self._reply(msg, "请指定要删除的监控 ID，如 /monitor remove 1")
+                mid = int(mid_str)
+            except ValueError:
+                self._reply(msg, "请指定要删除的监控 ID，如：删除监控 1")
                 return
             ok = svc.store.remove(mid, msg.chat_id)
             self._reply(msg, "✅ 已删除" if ok else "⚠️ 未找到该 ID 或无权删除")
+            return
+
+        # 「监控 <竞品>」「monitor add <竞品>」「添加监控 <竞品>」
+        competitor = re.sub(
+            r"^(监控|monitor\s+add|添加监控|添加)\s*", "", text
+        ).strip()
+        if not competitor:
+            self._reply(msg, "用法：\n  监控 <竞品名>（添加监控）\n  监控列表\n  删除监控 <ID>")
+            return
+        mid, created = svc.store.add(competitor, msg.chat_id)
+        if created:
+            self._reply(msg, f"✅ 已加入监控 #{mid}：{competitor}（定时搜索，有变化推群）")
         else:
-            self._reply(
-                msg,
-                "未知子命令。用法：\n  /monitor add <竞品名>\n  /monitor list\n  /monitor remove <ID>",
-            )
+            self._reply(msg, f"⚠️ 本群已监控「{competitor}」（#{mid}），无需重复添加")
 
 
 def do_p2_im_message_receive_v1(data: lark.im.v1.P2ImMessageReceiveV1) -> None:
