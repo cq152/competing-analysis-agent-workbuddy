@@ -240,7 +240,17 @@ async def feishu_event(request: Request):
             chat_id = ((body.get("event") or {}).get("context") or {}).get("open_chat_id", "")
             if not chat_id:
                 return JSONResponse({"code": 0, "msg": "card action without chat_id, skip"})
-            value = json.loads(value_str) if isinstance(value_str, str) else value_str
+            # 飞书回传的 action.value 可能是双重 JSON 编码字符串（外层引号+转义），
+            # 需逐层 json.loads 直到得到 dict，否则 downstream value.get() 会抛 AttributeError
+            value = value_str
+            if isinstance(value, str):
+                for _ in range(3):
+                    try:
+                        value = json.loads(value)
+                    except Exception:
+                        break
+                    if not isinstance(value, str):
+                        break
             threading.Thread(
                 target=bot.handle_card_action, args=(chat_id, value), daemon=True
             ).start()

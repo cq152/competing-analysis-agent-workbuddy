@@ -334,6 +334,10 @@ class LarkBot:
         value 来自按钮 JSON value 字段（已由 webhook 反序列化为 dict）。
         支持命令：re_analyze（重新分析）、quick_monitor（快速添加监控）。
         """
+        if not isinstance(value, dict):
+            print(f"[lark] card action value not dict: {type(value).__name__} {str(value)[:120]}")
+            self.push(chat_id, "⚠️ 按钮数据格式异常，请重试，或直接在群里发消息给我。")
+            return
         cmd = value.get("cmd", "")
         if cmd == "re_analyze":
             scene = value.get("scene", DEFAULT_SCENE)
