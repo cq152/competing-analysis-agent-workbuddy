@@ -116,8 +116,15 @@ class LarkBot:
             return
         content = json.loads(msg.content)
         raw_text = content.get("text", "")
-        # 去掉 @mention 占位（群聊 @机器人 时会有 @_user_x 或 <at> 标签）
-        clean = re.sub(r"@_user_\d+", "", raw_text)
+        # 去掉 @mention 占位：优先按事件自带的 mentions 数组精确剥离（key 即飞书下发的
+        # "@_user_ou_xxxx" 完整 token，最稳），再兜底正则（<at> 标签 + @_user_<任意非空白>）。
+        # 注：飞书真实 open_id 形如 ou_xxxx（含字母），旧正则 @_user_\d+ 只认数字会漏剥，
+        # 导致命令（/monitor、/weekly 等）被误判为默认 battle_card —— 已修复。
+        for m in (getattr(msg, "mentions", None) or []):
+            key = getattr(m, "key", None)
+            if key:
+                raw_text = raw_text.replace(key, "")
+        clean = re.sub(r"@_user_[^\s@]+", "", raw_text)
         clean = re.sub(r"<at[^>]*>.*?</at>", "", clean, flags=re.DOTALL)
         clean = clean.strip()
         if not clean or clean in ("/help", "帮助", "?"):
@@ -136,10 +143,20 @@ class LarkBot:
     def _async_analyze(self, msg, scene: str, query: str) -> None:
         try:
             res = analyze(scene, query)
-            # v3 引擎返回 AnalysisResult，取分析文本；兼容旧版纯文本返回
-            text = res.analysis if hasattr(res, "analysis") else str(res)
         except Exception as e:  # noqa: BLE001
-            text = f"分析失败：{e}"
+            self._reply(msg, f"分析失败：{e}")
+            return
+        # W3.1：富卡片优先，失败回退纯文本（不破坏 W1 已验证文本链路）
+        try:
+            from app.card_renderer import render_card
+
+            card = render_card(res)
+            if card and self.push_card(msg.chat_id, card):
+                return
+        except Exception as e:  # noqa: BLE001
+            print(f"[lark] card render/send failed, fallback to text: {e}")
+        # 回退：纯文本
+        text = res.analysis if hasattr(res, "analysis") else str(res)
         self._reply(msg, text)
 
     def _reply(self, msg, text: str) -> None:
@@ -166,6 +183,27 @@ class LarkBot:
         resp = self.client.im.v1.message.create(req)
         if not resp.success():
             print(f"[lark] push failed: code={resp.code} msg={resp.msg}")
+            return False
+        return True
+
+    def push_card(self, chat_id: str, card: dict) -> bool:
+        """主动向指定群推送飞书 Interactive Card（W3.1 富交互消息）。返回是否发送成功。"""
+        content = json.dumps(card, ensure_ascii=False)
+        req = (
+            CreateMessageRequest.builder()
+            .receive_id_type("chat_id")
+            .request_body(
+                CreateMessageRequestBody.builder()
+                .receive_id(chat_id)
+                .msg_type("interactive")
+                .content(content)
+                .build()
+            )
+            .build()
+        )
+        resp = self.client.im.v1.message.create(req)
+        if not resp.success():
+            print(f"[lark] push_card failed: code={resp.code} msg={resp.msg}")
             return False
         return True
 
