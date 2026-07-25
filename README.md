@@ -1,7 +1,7 @@
 # 竞品分析 Agent · 项目总览
 
 > 一个跑在**飞书群**里的「竞品雷达 + 军师」，卖给**中小企业（SMB）**。
-> 当前阶段：**MVP 验证** —— 飞书 Aily 无代码先跑通，验证分析质量后再决定是否自建后端。
+> 当前阶段：**W2 后端开发完成，进入 W3**（飞书群 Webhook 实测 P0 全 PASS + W2 监控雷达/结构化引擎落地）；Aily 仅作参考，主通道为代码 Webhook（见 `08` + `W2-开发记录与验收.md`）。
 > 本文件是项目的单一事实来源（single source of truth）与版本管理入口。
 
 ---
@@ -26,7 +26,7 @@
 
 | 决策点 | 结论 |
 |---|---|
-| 技术路线 | **Aily 无代码先跑通 MVP**，验证分析质量后再按 `02` 自建 FastAPI 后端 |
+| 技术路线 | **已执行路线 B：代码声明式飞书 Webhook（自建 FastAPI）**，Aily 降为参考（`08` + `W2-开发记录与验收.md`；W2 已完成，W3 进行中） |
 | 产品调性 | 下沉为「雷达 + 军师」，刻意拉开与原文件夹「7×24 战略分析师」的距离 |
 | 分发方式 | **飞书群即产品界面**，bot 进群 = 嵌入工作流 = 留存（非独立网站） |
 | 最大风险 | Agent 会不会产出「流畅但很浅」的报告 → 必须用 live 原型验证分析质量 |
@@ -140,7 +140,7 @@
 - [ ] 选项 C：提示词版本化结构（已在选项 A 中一并完成，`validation/prompts/*.txt` 即结构化文件）
 
 ### W2 正式开发进度（v3，监控优先）
-- [x] **计划 v3 定稿（2026-07-25）**：基于 `13` 批判审视 + `14` 对比实验，用户决策——不做 concierge 预验证、G6 降级为目标、监控推送提前到 W2、中文数据源降占位、定价重做。落地于 `09` 附录C + `04` §五 v2 + `06` G6 降级 + `README` 同步
+- [x] **计划 v3 定稿（2026-07-25）**：基于 `13` 批判审视 + `14` 对比实验，用户决策——不做 concierge 预验证、G6 降级为目标、监控推送提前到 W2、中文数据源降占位、定价重做。落地于 `W2-开发记录与验收.md` §一 + `04` §五 v2 + `06` G6 降级 + `README` 同步
 - [x] **2.1 基础设施加固**：config.py（pydantic_settings + 兼容 W1 字段）+ logger.py + 依赖（ddgs/trafilatura/httpx/pydantic-settings）
 - [x] **2.2 通用搜索 searcher.py（v3 简化）**：砍 site: 中文社媒搜索，仅通用 DuckDuckGo（ddgs 包，lite backend 实测可用）
 - [x] **2.3 抓取 fetcher.py（v3 简化）**：修 trafilatura 2.x API 漂移（`output_format="txt"` + `extract_metadata` 取代 `extract_title/date`）+ 砍定价页提取（移 W4）
@@ -152,10 +152,10 @@
 - [x] **2.8 中文数据源占位 chinese_sources.py**：`SourceType` 枚举 + `DataPoint` + `ChineseSourceManager.search()` 默认返回 `[]`（enable=False），启用抛 `NotImplementedError` 指向 W4 实接
 - [x] **2.9 清理废弃文件**：`git rm` 删除 `app/main.py`/`app/feishu.py`/`app/sessions.py`（无活跃 import），修正 `webhook_server.py` 顶部过时注释
 - [x] **W2 v3 全部 9 个 Task 完成（2026-07-25）**：2.1–2.9 落地，含监控雷达（唯一硬差异化）+ 结构化分析引擎 + 优雅降级；下一步进入 W3（按 `09` 滚动计划细化）或先跑真实用户验证
-> 审计与决策过程见 `15`；v3 任务清单以 `09` 附录C 为准。
+> 审计与决策过程见 `W2-开发记录与验收.md` §三；v3 任务清单以 `W2-开发记录与验收.md` §一为准。
 
-- [x] **W2 验证已落库（2026-07-25）**：详见 `16-W2验证记录.md`——代码层/引擎冒烟/红线回归全绿（真实 DDG 搜索 3 条 + DeepSeek 1778 字带引用；pricing 红线 G1 合规）；`06-测试记录表.csv` 追加 5 条 W2 代码层 PASS 行（W2-IMP/E2E/RED/RBAC/CLN）。**飞书集成项（MR-01/FS-*）仍待测**，需用户本地起服务 + ngrok + 飞书群实测。
-- [ ] **W3 进行中（滚动计划已铺 `17`）**：飞书卡片渲染（card_renderer）+ `/compare` 对比 + 会话 SQLite 重建 + webhook 加固；按 v3 修正（来源分色降级为仅 🔵通用、监控已前置不重复）。详见 `17-W3滚动计划.md`。
+- [x] **W2 验证已落库（2026-07-25）**：详见 `W2-开发记录与验收.md` §四——代码层/引擎冒烟/红线回归全绿（真实 DDG 搜索 3 条 + DeepSeek 1778 字带引用；pricing 红线 G1 合规）；`06-测试记录表.csv` 追加 5 条 W2 代码层 PASS 行（W2-IMP/E2E/RED/RBAC/CLN）。**飞书集成项（MR-01/FS-*）仍待测**，需用户本地起服务 + ngrok + 飞书群实测。
+- [ ] **W3 进行中（滚动计划见 `W2-开发记录与验收.md` §五）**：飞书卡片渲染（card_renderer）+ `/compare` 对比 + 会话 SQLite 重建 + webhook 加固；按 v3 修正（来源分色降级为仅 🔵通用、监控已前置不重复）。详见 `W2-开发记录与验收.md` §五。
 
 ---
 
