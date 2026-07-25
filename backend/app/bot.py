@@ -165,10 +165,8 @@ class LarkBot:
         clean = clean.strip()
         # W3.5：首次@欢迎（chat_id 维度，每群只推一次），不阻塞当前命令
         self._maybe_onboard(msg)
-        # 空 @mention（只 @ 了机器人没说话）静默忽略，不弹完整使用指南
-        if not clean:
-            return
-        if clean in ("/help", "帮助", "help", "?"):
+        # 空 @mention 或显式"帮助" → 推使用指南卡片（用户期望：@了不说话也给引导）
+        if not clean or clean in ("/help", "帮助", "help", "?"):
             self._push_help_card(msg)
             return
         # 命令路由：优先自然语言（无 /），同时兼容旧 / 前缀
