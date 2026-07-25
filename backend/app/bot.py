@@ -249,7 +249,9 @@ class LarkBot:
         if not main:
             self._push_tip(msg.chat_id, "📖 用法提示", "还没有记录主竞品，请先用 `对比 A B` 指定。\n\n**示例：** `对比 飞书 钉钉`", "orange")
             return
-        self._remember_main(msg.chat_id, other)
+        # 注意：不更新主竞品——"和X对比"语义下 X 是对比对象，主竞品保持不变。
+        # 只有显式「对比 A B」(_handle_compare) 才 remember_main(targets[0])。
+        # 此前这里误写 _remember_main(chat_id, other) 导致连续对比时主竞品被覆盖（X vs X bug）。
         threading.Thread(target=self._async_compare, args=(msg, [main, other]), daemon=True).start()
         self._push_tip(msg.chat_id, "🔍 对比分析中", f"正在检索并对比 **{main} / {other}**…\n稍候片刻，对比卡片即将送达。", "blue")
 
