@@ -22,6 +22,7 @@ from lark_oapi.api.im.v1 import CreateMessageRequest, CreateMessageRequestBody
 
 from .config import settings
 from .engine import analyze, compare, list_scenes
+from .sessions import get_session_store
 
 # 声明式配置（不含密钥，密钥走 .env）
 CONFIG_PATH = Path(__file__).resolve().parent.parent / "bot_config.json"
@@ -73,8 +74,8 @@ HELP_TEXT = BOT_CONFIG.get("help_text") or _default_help()
 # 全局 bot 单例（在 main() 中创建，事件回调引用）
 _bot: Optional["LarkBot"] = None
 
-# W3.2「和 XX 对比」轻量记忆：chat_id -> 上次主竞品（3.3 sessions.py 持久化到 SQLite）
-_last_compare: dict[str, str] = {}
+# W3.2 的「和 XX 对比」主竞品记忆已持久化到 SQLite（见 app/sessions.py）；
+# bot 不再持有 in-memory 状态，跨重启不丢。
 
 
 class LarkBot:
@@ -156,6 +157,13 @@ class LarkBot:
         except Exception as e:  # noqa: BLE001
             self._reply(msg, f"分析失败：{e}")
             return
+        # W3.3：分析完成后持久化历史（会话连续/回溯），摘要截取前 200 字
+        try:
+            get_session_store().save_analysis(
+                msg.chat_id, scene, query, (res.analysis or "")[:200]
+            )
+        except Exception as e:  # noqa: BLE001
+            print(f"[lark] save analysis history failed: {e}")
         # W3.1：富卡片优先，失败回退纯文本（不破坏 W1 已验证文本链路）
         try:
             from app.card_renderer import render_card
@@ -170,8 +178,8 @@ class LarkBot:
         self._reply(msg, text)
 
     def _remember_main(self, chat_id: str, target: str) -> None:
-        """记录本群上次主竞品，供「和 XX 对比」自动补位（3.3 持久化）。"""
-        _last_compare[chat_id] = target
+        """记录本群上次主竞品，供「和 XX 对比」自动补位（3.3 持久化到 SQLite）。"""
+        get_session_store().set_primary(chat_id, target)
 
     def _handle_compare(self, msg, text: str) -> None:
         """处理 /compare A B [C]：显式多竞品对比。"""
@@ -193,7 +201,7 @@ class LarkBot:
             self._reply(msg, "用法：和 <竞品> 对比 / 对比 <竞品>（需先 /compare A B 记录主竞品）")
             return
         other = parts[0]
-        main = _last_compare.get(msg.chat_id)
+        main = get_session_store().get_primary(msg.chat_id)
         if not main:
             self._reply(msg, "还没有记录主竞品，请先用 /compare A B 指定，例如 /compare 飞书 钉钉")
             return
@@ -208,6 +216,13 @@ class LarkBot:
         except Exception as e:  # noqa: BLE001
             self._reply(msg, f"对比分析失败：{e}")
             return
+        # W3.3：对比也存历史（会话连续/回溯），摘要截取前 200 字
+        try:
+            get_session_store().save_analysis(
+                msg.chat_id, "compare", " vs ".join(targets), (res.analysis or "")[:200]
+            )
+        except Exception as e:  # noqa: BLE001
+            print(f"[lark] save compare history failed: {e}")
         try:
             from app.card_renderer import render_card
 
