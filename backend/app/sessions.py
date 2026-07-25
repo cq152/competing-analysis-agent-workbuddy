@@ -56,6 +56,14 @@ class SessionStore:
             )
             """
         )
+        # W3.5：onboarding 标记列（chat_id 维度，每群只推一次首次欢迎）
+        # 迁移：旧库 sessions 表无此列，ALTER 补上（IF NOT EXISTS 兼容旧库）
+        try:
+            self._conn.execute(
+                "ALTER TABLE sessions ADD COLUMN onboarded INTEGER NOT NULL DEFAULT 0"
+            )
+        except sqlite3.OperationalError:
+            pass  # 列已存在
         self._conn.commit()
 
     # ===== 主竞品记忆（接替 W3.2 的 _last_compare in-memory）=====
@@ -69,11 +77,31 @@ class SessionStore:
     def set_primary(self, chat_id: str, competitor: str) -> None:
         """记录/更新该群主竞品（INSERT OR REPLACE 兼容无 ON CONFLICT 的旧 SQLite）。"""
         self._conn.execute(
-            "INSERT OR REPLACE INTO sessions (chat_id, primary_competitor, updated_at) "
-            "VALUES (?,?,?)",
-            (chat_id, competitor, _now()),
+            "INSERT OR REPLACE INTO sessions (chat_id, primary_competitor, updated_at, onboarded) "
+            "VALUES (?,?,?, COALESCE((SELECT onboarded FROM sessions WHERE chat_id=?), 0))",
+            (chat_id, competitor, _now(), chat_id),
         )
         self._conn.commit()
+
+    # ===== 首次@欢迎标记（W3.5）=====
+    def mark_onboarded(self, chat_id: str) -> bool:
+        """标记该群已欢迎过。返回 True=首次（本次刚标记），False=已欢迎过。
+
+        幂等：同 chat_id 多次调用只有第一次返回 True。
+        """
+        row = self._conn.execute(
+            "SELECT onboarded FROM sessions WHERE chat_id=?", (chat_id,)
+        ).fetchone()
+        if row and row["onboarded"]:
+            return False  # 已欢迎过
+        # 首次：upsert，onboarded=1
+        self._conn.execute(
+            "INSERT OR REPLACE INTO sessions (chat_id, primary_competitor, updated_at, onboarded) "
+            "VALUES (?, COALESCE((SELECT primary_competitor FROM sessions WHERE chat_id=?), ''), ?, 1)",
+            (chat_id, chat_id, _now()),
+        )
+        self._conn.commit()
+        return True
 
     # ===== 分析历史 =====
     def save_analysis(

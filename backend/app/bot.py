@@ -163,8 +163,10 @@ class LarkBot:
         clean = re.sub(r"^@[^\s]+[\s　]+", "", clean)
         clean = re.sub(r"^@[^\s]+", "", clean)
         clean = clean.strip()
+        # W3.5：首次@欢迎（chat_id 维度，每群只推一次），不阻塞当前命令
+        self._maybe_onboard(msg)
         if not clean or clean in ("/help", "帮助", "help", "?"):
-            self._reply(msg, HELP_TEXT)
+            self._push_help_card(msg)
             return
         # 命令路由：优先自然语言（无 /），同时兼容旧 / 前缀
         # 注意顺序：子命令（列表/删除）必须优先于「监控 <竞品>」，避免"监控列表"被误判为监控"列表"
@@ -278,6 +280,33 @@ class LarkBot:
         # 99992402 field validation failed；改用 receive_id_type="chat_id" 发到群最稳
         # （群内以 bot 独立消息呈现，可见且不依赖消息 id 格式）。
         self.push(msg.chat_id, text)
+
+    def _maybe_onboard(self, msg) -> None:
+        """首次@欢迎：chat_id 维度每群只推一次 onboarding 卡片，不阻塞当前命令。
+
+        用 sessions 表的 onboarded 标记（W3.5 新增列）。失败静默，不影响主流程。
+        """
+        try:
+            if not get_session_store().mark_onboarded(msg.chat_id):
+                return  # 已欢迎过
+            from app.card_renderer import render_onboarding_card
+
+            card = render_onboarding_card(BOT_NAME)
+            self.push_card(msg.chat_id, card)
+        except Exception as e:  # noqa: BLE001
+            print(f"[lark] onboard failed (skip): {e}")
+
+    def _push_help_card(self, msg) -> None:
+        """推送帮助卡片（W3.5 取代纯文本 HELP_TEXT）。卡片发送失败回退纯文本。"""
+        try:
+            from app.card_renderer import render_help_card
+
+            card = render_help_card(BOT_NAME, list_scenes())
+            if self.push_card(msg.chat_id, card):
+                return
+        except Exception as e:  # noqa: BLE001
+            print(f"[lark] help card failed, fallback to text: {e}")
+        self._reply(msg, HELP_TEXT)
 
     def push(self, chat_id: str, text: str) -> bool:
         """主动向指定群推送消息（监控雷达用）。返回是否发送成功。"""

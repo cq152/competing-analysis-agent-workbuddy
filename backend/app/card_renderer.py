@@ -186,6 +186,96 @@ def render_compare_card(res: CompareResult) -> dict:
     }
 
 
+def render_help_card(bot_name: str = "竞品分析搭档", scenes: list[str] | None = None) -> dict:
+    """渲染帮助卡片：分「我能做什么 / 命令示例 / 使用说明」三栏，视觉分层。
+
+    取代旧版纯文本 HELP_TEXT，让新用户扫一眼就知道怎么用。
+    """
+    scenes = scenes or ["battle_card", "pricing", "weekly", "discovery"]
+    elements: list[dict] = [
+        # 一句话定位
+        {"tag": "markdown", "content": f"我是 **{bot_name}**，你的竞品雷达 + 军师。\n实时检索 + 模型分析，把竞品动态变成可执行的应对策略。"},
+        {"tag": "hr"},
+        # 我能做什么
+        {"tag": "markdown", "content": (
+            "**🎯 我能做什么**\n"
+            "• 🛡️ **销售应对卡** — 客户拿竞品压价，给你话术 + 差异化卖点\n"
+            "• 💰 **定价策略** — 竞品调价了，分析意图 + 推荐跟进方案\n"
+            "• 📊 **竞品周报** — 一键生成本周竞品动态摘要\n"
+            "• 🔭 **竞品发现** — 给定赛道，帮你找出主要玩家\n"
+            "• ⚖️ **多竞品对比** — 横向对比 2~3 个竞品的维度矩阵\n"
+            "• 📡 **竞品监控** — 添加监控，有变化自动推群"
+        )},
+        {"tag": "hr"},
+        # 命令示例
+        {"tag": "markdown", "content": (
+            "**💬 直接对我说（不用加 /）**\n"
+            "```\n"
+            "客户总拿飞书压我们，怎么应对？\n"
+            "钉钉降价了，我们怎么跟？\n"
+            "本周竞品周报\n"
+            "我们做协同办公，帮我发现竞品\n"
+            "对比 飞书 钉钉 企业微信\n"
+            "监控 飞书\n"
+            "监控列表 / 删除监控 1\n"
+            "帮助\n"
+            "```"
+        )},
+        {"tag": "hr"},
+        # 使用说明
+        {"tag": "markdown", "content": (
+            "**⚠️ 使用说明**\n"
+            "• 群里需要 @我 才会响应；私聊直接发即可\n"
+            "• 分析基于实时网络检索 + 模型推理，结果仅供参考\n"
+            "• 中文数据源（天眼查/小红书等）暂未接入，W4 补全\n"
+            f"• 可用场景：{', '.join(scenes)}"
+        )},
+        {"tag": "hr"},
+        {"tag": "markdown", "content": "💡 随时发「帮助」重新查看本说明。"},
+    ]
+    return {
+        "config": {"wide_screen_mode": True},
+        "header": {
+            "title": {"tag": "plain_text", "content": f"🤖 {bot_name}｜使用指南"},
+            "template": "indigo",
+        },
+        "elements": elements,
+    }
+
+
+def render_onboarding_card(bot_name: str = "竞品分析搭档") -> dict:
+    """首次@欢迎卡片：简洁有力，引导第一次使用。
+
+    设计原则：不要又是长 help，只给「我是谁 + 3 个最常用命令 + 怎么开始」。
+    新用户扫一眼就能动手，详细说明走「帮助」。
+    """
+    elements: list[dict] = [
+        {"tag": "markdown", "content": f"👋 你好！我是 **{bot_name}**。"},
+        {"tag": "markdown", "content": (
+            "我能帮你 **盯竞品 + 出对策**：实时检索网络情报，把竞品动态变成销售话术、定价方案、周报。"
+        )},
+        {"tag": "hr"},
+        {"tag": "markdown", "content": (
+            "**🚀 试试这三句**\n"
+            "```\n"
+            "客户总拿飞书压我们，怎么应对？\n"
+            "对比 飞书 钉钉 企业微信\n"
+            "监控 飞书\n"
+            "```"
+        )},
+        {"tag": "hr"},
+        {"tag": "markdown", "content": "📖 发「帮助」查看完整功能说明。"},
+    ]
+    return {
+        "config": {"wide_screen_mode": True},
+        "header": {
+            "title": {"tag": "plain_text", "content": f"👋 欢迎使用 {bot_name}"},
+            "template": "green",
+        },
+        "elements": elements,
+    }
+
+
 def render_card(obj) -> Optional[dict]:
     """统一入口：按类型分发渲染。未知类型返回 None（调用方回退文本）。"""
     if isinstance(obj, AnalysisResult):
